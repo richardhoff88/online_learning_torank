@@ -2,23 +2,30 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-n_real = 100  # number of real users
-k = 5  # number of arms
-target_arm = 0  # Index of the target arm
-iterations = 1000 
+n_arms = 10  # number of arms
+rho = 1.0 # explore-exploit value
+
 ratios = [0.1, 0.25, 0.5, 1.0, 1.50, 2.0, 5.0]  # list of ratios, fake to real
-results = []
+
+
+# load dataset here
+def load_data():
+    data = np.loadtxt("dataset.txt")
+    arms, rewards, contexts = data[:,0], data[:,1], data[:,2:]
+    arms = arms.astype(int)
+    rewards = rewards.astype(float)
+    contexts = contexts.astype(float)
+    n_arms = len(np.unique(arms))
+    n_events = len(contexts)
+    n_dims = int(len(contexts[0])/n_arms)
+    contexts = contexts.reshape(n_events, n_arms, n_dims)
 
 
 
 
 
-
-
-
-
-
-
+def run():
+    load_data()
 
 
 
