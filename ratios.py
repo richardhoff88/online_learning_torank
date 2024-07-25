@@ -21,11 +21,57 @@ def load_data():
     contexts = contexts.reshape(n_events, n_arms, n_dims)
 
 
+# just took from multi-armed bandits github
+class UCBRecommender:
+    def __init__(self, n_arms, rho, Q0=np.inf):
+        if not rho > 0:
+            raise ValueError("`rho` must be positive")
+        if not (type(rho) == float and np.isreal(rho)):
+            raise TypeError("`rho` must be real float")
+        if not type(Q0) == float:
+            raise TypeError("`Q0` must be a float number or default value 'np.inf'")
+
+        self.rho = rho
+        self.q = np.full(n_arms, Q0)
+        self.rewards = np.zeros(n_arms)
+        self.avg_rewards = np.zeros(n_arms)
+        self.clicks = np.zeros(n_arms)
+        self.round = 0
+
+    def play(self, context=None):
+        self.round += 1
+        self.q = np.where(self.clicks != 0, self.avg_rewards + np.sqrt(self.rho * np.log10(self.round) / self.clicks), self.q)
+        arm = np.argmax(self.q)
+        return int(arm)
+
+    def update(self, arm, reward, context=None):
+        self.clicks[arm] += 1
+        self.rewards[arm] += reward
+        self.avg_rewards[arm] = self.rewards[arm] / self.clicks[arm]
+
+
+# for making the the different reward distribution
+def simulate_UCB(n_arms, rho, time, ratios):
+    fake_users = UCBRecommender(n_arms, rho)
+    real_users = UCBRecommender(n_arms, rho)
+
+    fake_user_rewards = 0
+    real_user_rewards = 0
+
+    for i in range(1, time):
+        # use play function from ucb 
+        fake_arm = fake_users.play()
+        real_arm = real_users.play()
+
+        #figure out some reward function
+        real_reward = real_arm * 1
+        real_user_reward += real_reward
+
+        # for fake user rewards check with ratios list
 
 
 
-def run():
-    load_data()
+
 
 
 
