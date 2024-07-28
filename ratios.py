@@ -10,17 +10,17 @@ ratios = [0.1, 0.25, 0.5, 1.0, 1.50, 2.0, 5.0]  # list of ratios, fake to real
 probabilities = np.random.rand(n_arms) # probability from 0 to 1 of giving a reward of 1
 
 
-# load dataset here
-def load_data():
-    data = np.loadtxt("dataset.txt")
-    arms, rewards, contexts = data[:,0], data[:,1], data[:,2:]
-    arms = arms.astype(int)
-    rewards = rewards.astype(float)
-    contexts = contexts.astype(float)
-    n_arms = len(np.unique(arms))
-    n_events = len(contexts)
-    n_dims = int(len(contexts[0])/n_arms)
-    contexts = contexts.reshape(n_events, n_arms, n_dims)
+# # load dataset here
+# def load_data():
+#     data = np.loadtxt("dataset.txt")
+#     arms, rewards, contexts = data[:,0], data[:,1], data[:,2:]
+#     arms = arms.astype(int)
+#     rewards = rewards.astype(float)
+#     contexts = contexts.astype(float)
+#     n_arms = len(np.unique(arms))
+#     n_events = len(contexts)
+#     n_dims = int(len(contexts[0])/n_arms)
+#     contexts = contexts.reshape(n_events, n_arms, n_dims)
 
 
 # just took from multi-armed bandits github
@@ -54,6 +54,9 @@ class UCBRecommender:
 
 # for making the the different reward distribution
 def simulate_UCB(n_arms, rho, time, ratios, probabilities):
+
+    results = []
+
     fake_users = UCBRecommender(n_arms, rho)
     real_users = UCBRecommender(n_arms, rho)
 
@@ -78,19 +81,28 @@ def simulate_UCB(n_arms, rho, time, ratios, probabilities):
 
         # for fake user rewards check with ratios list
 
-    real_users.update(real_arm, real_reward)
-    fake_users.update(fake_arm, fake_reward)
+        real_users.update(real_arm, real_reward)
+        fake_users.update(fake_arm, fake_reward)
 
-    #average?
-    fake_avg = fake_user_rewards / time
-    real_avg = real_user_rewards / time
-    return real_avg, fake_avg
+        #average?
+        fake_avg = fake_user_rewards / time
+        real_avg = real_user_rewards / time
+        results.append((real_avg, fake_avg))
 
-
-
-simulate_UCB(n_arms, rho, time, ratios, probabilities)
+    return results
 
 
+
+results = simulate_UCB(n_arms, rho, time, ratios, probabilities)
+
+real_avg_rewards, fake_avg_rewards = zip(*results)
+plt.plot(real_avg_rewards, label='Real Users')
+plt.plot(fake_avg_rewards, label='Fake Users')
+plt.xlabel('Ratio of Fake Users to Real Users')
+plt.ylabel('Average Reward')
+plt.title('Influence of Fake User to Real User Ratios on System')
+plt.legend()
+plt.show()
 
 
 
