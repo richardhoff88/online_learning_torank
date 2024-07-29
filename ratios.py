@@ -96,6 +96,7 @@ def simulate_UCB(n_arms, rho, time, ratios, probabilities):
 results = simulate_UCB(n_arms, rho, time, ratios, probabilities)
 
 real_avg_rewards, fake_avg_rewards = zip(*results)
+
 plt.plot(real_avg_rewards, label='Real Users')
 plt.plot(fake_avg_rewards, label='Fake Users')
 plt.xlabel('Ratio of Fake Users to Real Users')
