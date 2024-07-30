@@ -1,11 +1,13 @@
 """ Simulating click model """
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
 
 
 n_arms = 10  # number of arms
 rho = 1.0 # explore-exploit value
-time = 10 # rounds
+rounds = 10 # rounds
 ratios = [0.1, 0.25, 0.5, 1.0, 1.50, 2.0, 5.0]  # list of ratios, fake to real
 ratio = 1.5
 probabilities = np.random.rand(n_arms) # probability from 0 to 1 of giving a reward of 1
@@ -54,170 +56,48 @@ class UCBRecommender:
         self.avg_rewards[arm] = self.rewards[arm] / self.clicks[arm]
 
 
-# for making the the different reward distribution
-def simulate_UCB(n_arms, rho, time, ratio, probabilities):
 
-    results = []
-
-    fake_users = UCBRecommender(n_arms, rho)
+def simulate_UCB_attack(n_arms, rho, rounds, ratio, probabilities):
+    # changed this so it initializes as tuple
+    arm_counts = np.zeros((n_arms, rounds))
     real_users = UCBRecommender(n_arms, rho)
 
-
-    fake_user_rewards = 0
-    real_user_rewards = 0
-
-    for i in range(1, time):
-        # use play function from ucb 
-        real_arm = real_users.play()
-        fake_arm = fake_users.play()
-
-        #figure out some reward function
-        real_reward = real_arm * probabilities[real_arm]
-        real_user_rewards += real_reward
-
-        # fake user arm selection
-        if np.random.rand() < ratio:
-            fake_reward = fake_arm * probabilities[fake_arm]
-            fake_user_rewards += fake_reward
-
-
-        # for fake user rewards check with ratios list
-
-        real_users.update(real_arm, real_reward)
-        fake_users.update(fake_arm, fake_reward)
-
-        #average?
-        fake_avg = fake_user_rewards / time
-        real_avg = real_user_rewards / time
-        results.append((real_avg, fake_avg))
-
-        
-    return results
-
-def simulate_UCB_attack(n_arms, rho, time, ratio, probabilities):
-
-    arm_counts = np.zeros(n_arms, time)
-
-    real_users = UCBRecommender(n_arms, rho)
-
-    for i in range(1, time):
+    for i in range(1, rounds):
         # use play function from ucb 
         # play() returns the index of the selected arm
         real_arm = real_users.play()
-        
         #figure out some reward function
         real_reward = real_arm * probabilities[real_arm]
-
         # fake user arm selection
         if np.random.rand() < ratio:
-            fake_reward = 1
-            real_users.update(0, fake_reward)
-        
-        real_users.update(real_arm, real_reward)
+                fake_reward = 1
+                real_users.update(0, fake_reward)
 
+        real_users.update(real_arm, real_reward)
         arm_counts[real_arm, i] += 1
-    
     return arm_counts
         
-        
+arm_counts = simulate_UCB_attack(n_arms, rho, rounds, ratio, probabilities)
+#convert our 2darray to matrix
+matrix = np.array(arm_counts)
 
+#plotting 1's and 0's distribution in 2d
+plt.imshow(matrix, cmap='viridis',aspect='auto')
+plt.title(f'Distribution of reward based on ratio: {ratio}')
+plt.show()
 
+# New figure - surface plot used for 2d matrics
+x, y = np.meshgrid(range(matrix.shape[1]), range(matrix.shape[0]))
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.plot_surface(x, y, matrix, cmap='viridis')
 
-results = simulate_UCB(n_arms, rho, time, ratio, probabilities)
-
-real_avg_rewards, fake_avg_rewards = zip(*results)
-
-plt.plot(real_avg_rewards, label='Real Users')
-plt.plot(fake_avg_rewards, label='Fake Users')
-plt.xlabel('Ratio of Fake Users to Real Users')
-plt.ylabel('Average Reward')
-plt.title('Influence of Fake User to Real User Ratios on System')
-plt.legend()
+# check this
+# right now plot shows 1's and 0's on plot in 3d
+ax.set_xlabel('number of arms')
+ax.set_ylabel('rounds')
+ax.set_zlabel('real user reward (1 or 0)')
+plt.title(f'Distribution of reward based on ratio: {ratio}')
 plt.show()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# # Function to choose an arm based on user profile probabilities
-# def choose_arm(user_profile):
-#     return np.random.choice(range(k), p=user_profile)
-
-# # Function to simulate binary feedback (success/failure) based on true success rates
-# def get_feedback(arm, true_success_rates):
-#     return np.random.rand() < true_success_rates[arm]
-
-# # Function to update user profile based on feedback
-# def update_profile(user_profile, arm, feedback, learning_rate=0.1):
-#     if feedback:
-#         user_profile[arm] += learning_rate
-#     else:
-#         user_profile[arm] -= learning_rate / (k - 1)
-#     # Normalize the probability distribution to sum to 1
-#     user_profile = np.maximum(user_profile, 0)  # Ensure no negative probabilities
-#     user_profile /= user_profile.sum()
-#     return user_profile
-
-# # True success rates for each arm (for feedback simulation)
-# true_success_rates = np.random.rand(k)
-
-# # Simulation for different ratios of fake users to real users
-# for ratio in ratios:
-#     n_fake = int(ratio * n_real)
-#     # Initialize fake user profiles with higher probability for the target arm
-#     fake_users = np.full((n_fake, k), 0.2 / (k - 1))
-#     fake_users[:, target_arm] = 0.8
-#     # Initialize real user profiles with equal probability for each arm
-#     real_users = np.full((n_real, k), 1 / k)
-    
-#     target_arm_counts = np.zeros(iterations)
-    
-#     for it in range(iterations):
-#         selected_arms = []
-        
-#         # Fake users select arms
-#         for fake_user in fake_users:
-#             arm = choose_arm(fake_user)
-#             selected_arms.append(arm)
-        
-#         # Real users select arms
-#         for real_user in real_users:
-#             arm = choose_arm(real_user)
-#             selected_arms.append(arm)
-        
-#         # Collect feedback and update profiles
-#         for i, arm in enumerate(selected_arms):
-#             feedback = get_feedback(arm, true_success_rates)
-#             if i < n_fake:
-#                 # Update fake user profiles based on feedback
-#                 fake_users[i] = update_profile(fake_users[i], arm, feedback)
-#             else:
-#                 # Update real user profiles based on feedback
-#                 real_user_idx = i - n_fake
-#                 real_users[real_user_idx] = update_profile(real_users[real_user_idx], arm, feedback)
-        
-#         # Count how many times the target arm is chosen
-#         target_arm_counts[it] = selected_arms.count(target_arm)
-    
-#     average_target_arm_count = np.mean(target_arm_counts)
-#     results.append(average_target_arm_count)
-
-# # Plot the results
-# plt.plot(ratios, results)
-# plt.xlabel('Ratio of Fake Users to Real Users')
-# plt.ylabel('Average Target Arm Count')
-# plt.title('Influence of Fake Users on Recommendation')
-# plt.show()
