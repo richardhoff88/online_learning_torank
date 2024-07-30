@@ -7,7 +7,9 @@ n_arms = 10  # number of arms
 rho = 1.0 # explore-exploit value
 time = 10 # rounds
 ratios = [0.1, 0.25, 0.5, 1.0, 1.50, 2.0, 5.0]  # list of ratios, fake to real
+ratio = 1.5
 probabilities = np.random.rand(n_arms) # probability from 0 to 1 of giving a reward of 1
+
 
 
 # # load dataset here
@@ -53,12 +55,13 @@ class UCBRecommender:
 
 
 # for making the the different reward distribution
-def simulate_UCB(n_arms, rho, time, ratios, probabilities):
+def simulate_UCB(n_arms, rho, time, ratio, probabilities):
 
     results = []
 
     fake_users = UCBRecommender(n_arms, rho)
     real_users = UCBRecommender(n_arms, rho)
+
 
     fake_user_rewards = 0
     real_user_rewards = 0
@@ -72,11 +75,10 @@ def simulate_UCB(n_arms, rho, time, ratios, probabilities):
         real_reward = real_arm * probabilities[real_arm]
         real_user_rewards += real_reward
 
-        # fake arm selection
-        for j in range(len(ratios)):
-            if np.random.rand() < ratios[j]:
-                fake_reward = fake_arm * probabilities[fake_arm]
-                fake_user_rewards += fake_reward
+        # fake user arm selection
+        if np.random.rand() < ratio:
+            fake_reward = fake_arm * probabilities[fake_arm]
+            fake_user_rewards += fake_reward
 
 
         # for fake user rewards check with ratios list
@@ -89,11 +91,39 @@ def simulate_UCB(n_arms, rho, time, ratios, probabilities):
         real_avg = real_user_rewards / time
         results.append((real_avg, fake_avg))
 
+        
     return results
 
+def simulate_UCB_attack(n_arms, rho, time, ratio, probabilities):
+
+    arm_counts = np.zeros(n_arms, time)
+
+    real_users = UCBRecommender(n_arms, rho)
+
+    for i in range(1, time):
+        # use play function from ucb 
+        # play() returns the index of the selected arm
+        real_arm = real_users.play()
+        
+        #figure out some reward function
+        real_reward = real_arm * probabilities[real_arm]
+
+        # fake user arm selection
+        if np.random.rand() < ratio:
+            fake_reward = 1
+            real_users.update(0, fake_reward)
+        
+        real_users.update(real_arm, real_reward)
+
+        arm_counts[real_arm, i] += 1
+    
+    return arm_counts
+        
+        
 
 
-results = simulate_UCB(n_arms, rho, time, ratios, probabilities)
+
+results = simulate_UCB(n_arms, rho, time, ratio, probabilities)
 
 real_avg_rewards, fake_avg_rewards = zip(*results)
 
