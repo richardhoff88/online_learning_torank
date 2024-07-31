@@ -9,7 +9,7 @@ n_arms = 10  # number of arms
 rho = 1.0 # explore-exploit value
 rounds = 10 # rounds
 ratios = [0.1, 0.25, 0.5, 1.0, 1.50, 2.0, 5.0]  # list of ratios, fake to real
-ratio = 1.5
+ratio =0.2
 probabilities = np.random.rand(n_arms) # probability from 0 to 1 of giving a reward of 1
 
 
