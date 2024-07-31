@@ -91,8 +91,8 @@ for ratio in ratios:
     # right now plot shows 1's and 0's on plot in 3d
     ax.set_xlabel('number of arms')
     ax.set_ylabel('rounds')
-    ax.set_zlabel('real user reward (1 or 0)')
-    plt.title(f'Distribution of reward based on ratio: {ratio}')
+    ax.set_zlabel('# of times attacked (1 or 0)')
+    plt.title(f'Frequency of attack based on ratio: {ratio}')
     plt.show()
 
 

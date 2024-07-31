@@ -83,7 +83,7 @@ matrix = np.array(arm_counts)
 
 #plotting 1's and 0's distribution in 2d
 plt.imshow(matrix, cmap='viridis',aspect='auto')
-plt.title(f'Distribution of reward based on ratio: {ratio}')
+plt.title(f'Frequency of attack based on ratio: {ratio}')
 plt.show()
 
 # New figure - surface plot used for 2d matrics
@@ -96,8 +96,8 @@ ax.plot_surface(x, y, matrix, cmap='viridis')
 # right now plot shows 1's and 0's on plot in 3d
 ax.set_xlabel('number of arms')
 ax.set_ylabel('rounds')
-ax.set_zlabel('real user reward (1 or 0)')
-plt.title(f'Distribution of reward based on ratio: {ratio}')
+ax.set_zlabel('# of attacks (1 or 0)')
+plt.title(f'Frequency of attack based on ratio: {ratio}')
 plt.show()
 
 
