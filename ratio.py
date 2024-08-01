@@ -77,7 +77,7 @@ def simulate_UCB_attack(n_arms, rho, rounds, frequency, probabilities, ratio):
         # fake user arm selection
         if np.random.rand() < frequency:
             for _ in range(ratio):
-                real_users.update(0, 1, True)
+                real_users.update(0, 1, fake=True)
 
 
     return arm_counts
