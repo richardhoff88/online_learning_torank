@@ -7,10 +7,10 @@ from mpl_toolkits.mplot3d import Axes3D
 
 n_arms = 10  # number of arms
 rho = 1.0 # explore-exploit value
-rounds = 10 # rounds
-ratios = [0.1, 0.25, 0.5, 1.0, 1.50, 2.0, 5.0]  # list of ratios, fake to real
-ratio =0.2
-probabilities = np.random.rand(n_arms) # probability from 0 to 1 of giving a reward of 1
+rounds = 100 # rounds
+ratios = [1, 2, 5, 2]  # list of ratios, fake to real
+frequencies = [0.1, 0.25, 0.5, 1.0]
+probabilities = np.random.rand(n_arms) * 1 # probability from 0 to 1 of giving a reward of 1
 
 
 
@@ -46,44 +46,51 @@ class UCBRecommender:
 
     def play(self, context=None):
         self.round += 1
-        self.q = np.where(self.clicks != 0, self.avg_rewards + np.sqrt(self.rho * np.log10(self.round) / self.clicks), self.q)
+        non_zero_clicks = self.clicks + 1e-10  # Add a small constant to avoid division by zero
+        self.q = self.avg_rewards + np.sqrt(self.rho * np.log(self.round) / non_zero_clicks)
         arm = np.argmax(self.q)
         return int(arm)
 
-    def update(self, arm, reward, context=None):
-        self.clicks[arm] += 1
+    def update(self, arm, reward, fake=False):
+        if not fake:
+            self.clicks[arm] += 1
         self.rewards[arm] += reward
         self.avg_rewards[arm] = self.rewards[arm] / self.clicks[arm]
 
 
 
-def simulate_UCB_attack(n_arms, rho, rounds, ratio, probabilities):
+def simulate_UCB_attack(n_arms, rho, rounds, frequency, probabilities, ratio):
     # changed this so it initializes as tuple
     arm_counts = np.zeros((n_arms, rounds))
     real_users = UCBRecommender(n_arms, rho)
 
-    for i in range(1, rounds):
+    for i in range(0, rounds + n_arms):
         # use play function from ucb 
         # play() returns the index of the selected arm
         real_arm = real_users.play()
+        if i >= n_arms:
+            arm_counts[real_arm, i-10] += 1
+        print(real_arm)
         #figure out some reward function
-        real_reward = real_arm * probabilities[real_arm]
-        # fake user arm selection
-        if np.random.rand() < ratio:
-                fake_reward = 1
-                real_users.update(0, fake_reward)
-
+        real_reward = probabilities[real_arm]
         real_users.update(real_arm, real_reward)
-        arm_counts[real_arm, i] += 1
+        # fake user arm selection
+        if np.random.rand() < frequency:
+            for _ in range(ratio):
+                real_users.update(0, 1, True)
+
+
     return arm_counts
-        
-arm_counts = simulate_UCB_attack(n_arms, rho, rounds, ratio, probabilities)
+
+frequency = frequencies[0]
+ratio = ratios[0]
+arm_counts = simulate_UCB_attack(n_arms, rho, rounds, frequency, probabilities, ratio)
 #convert our 2darray to matrix
 matrix = np.array(arm_counts)
 
 #plotting 1's and 0's distribution in 2d
 plt.imshow(matrix, cmap='viridis',aspect='auto')
-plt.title(f'Frequency of attack based on ratio: {ratio}')
+plt.title(f'Frequency of attack based on ratio: {frequency}')
 plt.show()
 
 # New figure - surface plot used for 2d matrics
@@ -97,7 +104,8 @@ ax.plot_surface(x, y, matrix, cmap='viridis')
 ax.set_xlabel('number of arms')
 ax.set_ylabel('rounds')
 ax.set_zlabel('# of attacks (1 or 0)')
-plt.title(f'Frequency of attack based on ratio: {ratio}')
+plt.title(f'Frequency of attack based on ratio: {frequency}')
 plt.show()
+print(len(arm_counts[0]))
 
 
