@@ -114,6 +114,6 @@ plt.title(f'Number of attacks per round based on frequency: {frequency}')
 plt.show()
 print(len(arm_counts[0]))
 
-
+# nonlinear function of fake user attacks?
 # percentage of target arm pulls (bar chart)
 # identify cost; total number of users to fake users ratio
