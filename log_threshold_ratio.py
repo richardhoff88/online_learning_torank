@@ -69,15 +69,15 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilitie
         # if (i != 0):
         #     print (math.log2(i))
 
-        if math.log2(i) > frequency: # threshold for attack frequency (log correlation to time step); different types of attacks
+        if math.log(i, 10) > frequency: # threshold for attack frequency (log correlation to time step); different types of attacks
             for _ in range(ratio):
                 if real_arm != target_arm:
                     real_users.update(real_arm, 0, fake=True)
 
     return arm_counts
 
-frequency = frequencies[3]
-ratio = ratios[2]
+frequency = frequencies[1]
+ratio = ratios[1]
 target_arm = 0
 arm_counts = simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilities, ratio)
 #convert our 2darray to matrix
