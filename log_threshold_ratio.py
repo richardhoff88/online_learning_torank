@@ -77,11 +77,12 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilitie
     return arm_counts
 
 frequency = frequencies[3]
-ratio = ratios[0]
+ratio = ratios[2]
 target_arm = 0
 arm_counts = simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilities, ratio)
 #convert our 2darray to matrix
 matrix = np.array(arm_counts)
+
 
 #plotting 1's and 0's distribution in 2d
 plt.imshow(matrix, cmap='viridis',aspect='auto')
