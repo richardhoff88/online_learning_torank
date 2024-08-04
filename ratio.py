@@ -49,7 +49,7 @@ class UCBRecommender:
         self.round += 1
         recommended_times = self.recommended_times + 1e-10  # Add a small constant to avoid division by zero
         self.q = self.avg_rewards + np.sqrt(self.rho * np.log(self.round) / recommended_times)
-        print(self.avg_rewards[0])
+        # print(self.avg_rewards[0])
         arm = np.argmax(self.q)
         return int(arm)
 
@@ -73,7 +73,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilitie
         real_arm = real_users.play()
         if i >= n_arms:
             arm_counts[real_arm, i-10] += 1
-        print(real_arm)
+        # print(real_arm)
         #figure out some reward function
         real_reward = probabilities[real_arm]
         real_users.update(real_arm, real_reward)
@@ -86,7 +86,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilitie
     return arm_counts
 
 frequency = frequencies[3]
-ratio = ratios[0]
+ratio = ratios[3]
 target_arm = 0
 arm_counts = simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilities, ratio)
 #convert our 2darray to matrix
