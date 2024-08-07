@@ -9,9 +9,10 @@ import math
 n_arms = 10  # number of arms
 rho = 1.0 # explore-exploit value
 rounds = 1000 # rounds
-ratios = [1, 2, 5, 2]  # list of ratios, fake to real
+ratios = [1, 2, 5, 100]  # list of ratios, fake to real
 frequencies = [0.1, 0.25, 0.5, 1.0]
 probabilities = np.random.rand(n_arms) * 1 # probability from 0 to 1 of giving a reward of 1
+print(probabilities[0])
 
 
 # just took from multi-armed bandits github
@@ -36,7 +37,7 @@ class UCBRecommender:
         self.round += 1
         recommended_times = self.recommended_times + 1e-10  # Add a small constant to avoid division by zero
         self.q = self.avg_rewards + np.sqrt(self.rho * np.log(self.round) / recommended_times)
-        print(self.avg_rewards[0])
+        # print(self.avg_rewards[0])
         arm = np.argmax(self.q)
         return int(arm)
 
@@ -53,35 +54,42 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilitie
     # changed this so it initializes as tuple
     arm_counts = np.zeros((n_arms, rounds))
     real_users = UCBRecommender(n_arms, rho)
-
-    for i in range(1, rounds + n_arms):
+    counter = 0
+    for i in range(0, rounds + n_arms):
         # use play function from ucb 
         # play() returns the index of the selected arm
         real_arm = real_users.play()
         if i >= n_arms:
             arm_counts[real_arm, i-10] += 1
-        # print(real_arm)
+        if real_arm == 0:
+            counter += 1
         #figure out some reward function
         real_reward = probabilities[real_arm]
         real_users.update(real_arm, real_reward)
         # fake user arm selection
 
-        # if (i != 0):
-        #     print (math.log2(i))
-
-        if math.log(i, 10) > frequency: # threshold for attack frequency (log correlation to time step); different types of attacks
+        if np.random.rand() < (frequency / math.log(i + math.e, math.e)): # threshold for attack frequency (log correlation to time step); different types of attacks
             for _ in range(ratio):
                 if real_arm != target_arm:
                     real_users.update(real_arm, 0, fake=True)
+                else:
+                    real_users.update(real_arm, 1, fake=True)
+    return arm_counts, counter
 
-    return arm_counts
-
-frequency = frequencies[1]
+frequency = frequencies[3]
 ratio = ratios[1]
 target_arm = 0
-arm_counts = simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilities, ratio)
+arm_counts, chosen_times = simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilities, ratio)
+print(chosen_times)
+print(float(chosen_times)/rounds * 100)
 #convert our 2darray to matrix
 matrix = np.array(arm_counts)
+
+percentage = float(chosen_times)/rounds * 100
+plt.scatter(range(rounds), percentage[: rounds])
+plt.xlabel('Rounds')
+plt.ylabel('Percentage of pulling the target arm (0)')
+plt.show()
 
 
 #plotting 1's and 0's distribution in 2d

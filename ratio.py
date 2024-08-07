@@ -73,7 +73,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilitie
         real_arm = real_users.play()
         if i >= n_arms:
             arm_counts[real_arm, i-10] += 1
-        # print(real_arm)
+        print(real_arm)
         #figure out some reward function
         real_reward = probabilities[real_arm]
         real_users.update(real_arm, real_reward)
