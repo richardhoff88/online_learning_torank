@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import math
 
 
 
@@ -11,20 +12,6 @@ rounds = 1000 # rounds
 ratios = [1, 2, 5, 2]  # list of ratios, fake to real
 frequencies = [0.1, 0.25, 0.5, 1.0]
 probabilities = np.random.rand(n_arms) * 1 # probability from 0 to 1 of giving a reward of 1
-
-
-
-# # load dataset here
-# def load_data():
-#     data = np.loadtxt("dataset.txt")
-#     arms, rewards, contexts = data[:,0], data[:,1], data[:,2:]
-#     arms = arms.astype(int)
-#     rewards = rewards.astype(float)
-#     contexts = contexts.astype(float)
-#     n_arms = len(np.unique(arms))
-#     n_events = len(contexts)
-#     n_dims = int(len(contexts[0])/n_arms)
-#     contexts = contexts.reshape(n_events, n_arms, n_dims)
 
 
 # just took from multi-armed bandits github
@@ -49,7 +36,7 @@ class UCBRecommender:
         self.round += 1
         recommended_times = self.recommended_times + 1e-10  # Add a small constant to avoid division by zero
         self.q = self.avg_rewards + np.sqrt(self.rho * np.log(self.round) / recommended_times)
-        # print(self.avg_rewards[0])
+        print(self.avg_rewards[0])
         arm = np.argmax(self.q)
         return int(arm)
 
@@ -67,7 +54,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilitie
     arm_counts = np.zeros((n_arms, rounds))
     real_users = UCBRecommender(n_arms, rho)
 
-    for i in range(0, rounds + n_arms):
+    for i in range(1, rounds + n_arms):
         # use play function from ucb 
         # play() returns the index of the selected arm
         real_arm = real_users.play()
@@ -78,19 +65,24 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilitie
         real_reward = probabilities[real_arm]
         real_users.update(real_arm, real_reward)
         # fake user arm selection
-        if np.random.rand() < frequency: # threshold for attack frequency (log correlation to time step); different types of attacks
+
+        # if (i != 0):
+        #     print (math.log2(i))
+
+        if math.log(i, 10) > frequency: # threshold for attack frequency (log correlation to time step); different types of attacks
             for _ in range(ratio):
                 if real_arm != target_arm:
                     real_users.update(real_arm, 0, fake=True)
 
     return arm_counts
 
-frequency = frequencies[3]
-ratio = ratios[3]
+frequency = frequencies[1]
+ratio = ratios[1]
 target_arm = 0
 arm_counts = simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilities, ratio)
 #convert our 2darray to matrix
 matrix = np.array(arm_counts)
+
 
 #plotting 1's and 0's distribution in 2d
 plt.imshow(matrix, cmap='viridis',aspect='auto')
@@ -112,6 +104,7 @@ ax.set_xlabel('rounds')
 ax.set_zlabel('# of attacks (1 or 0)')
 plt.title(f'Number of attacks per round based on frequency: {frequency}')
 plt.show()
+print(len(arm_counts[0]))
 
 # nonlinear function of fake user attacks?
 # percentage of target arm pulls (bar chart)
