@@ -112,7 +112,6 @@ ax.set_xlabel('rounds')
 ax.set_zlabel('# of attacks (1 or 0)')
 plt.title(f'Number of attacks per round based on frequency: {frequency}')
 plt.show()
-print(len(arm_counts[0]))
 
 # nonlinear function of fake user attacks?
 # percentage of target arm pulls (bar chart)
