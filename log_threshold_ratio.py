@@ -117,3 +117,5 @@ print(len(arm_counts[0]))
 # nonlinear function of fake user attacks?
 # percentage of target arm pulls (bar chart)
 # identify cost; total number of users to fake users ratio
+# identify correlation for when attack doesn't work
+# learn real reward distribution?
