@@ -76,6 +76,10 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, probabilitie
                     real_users.update(real_arm, 1, fake=True)
     return arm_counts, counter
 
+# look at the bad cases and design a separate algorithm that can be more effective
+# new attack based on observations from the real users can we design criterion to claim that its impossible
+# or not sufficient number of fake users
+
 frequency = frequencies[3]
 ratio = ratios[1]
 target_arm = 0
