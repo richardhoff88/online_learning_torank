@@ -61,8 +61,7 @@ class AttackController:
 
 def adaptive_attack(attack_controller, real_arm, target_arm, ratio, frequency, round_num):
     """
-    Adaptive attack mechanism that increases fake user ratio and frequency of attack
-    based on attack success rate.
+    adding more fake users and increasing frequency of attack
     """
     attack_threshold = frequency / math.log(round_num + math.e)
     
