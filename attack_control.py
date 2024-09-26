@@ -59,10 +59,8 @@ class AttackController:
         effectiveness = self.successful_attacks / self.total_attacks if self.total_attacks > 0 else 0
         return effectiveness >= self.effectiveness_threshold
 
+#    adding more fake users and increasing frequency of attack
 def adaptive_attack(attack_controller, real_arm, target_arm, ratio, frequency, round_num):
-    """
-    adding more fake users and increasing frequency of attack
-    """
     attack_threshold = frequency / math.log(round_num + math.e)
     
     if not attack_controller.evaluate_attack_effectiveness(real_arm, target_arm):
