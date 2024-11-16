@@ -92,10 +92,10 @@ print(float(chosen_times)/rounds * 100)
 matrix = np.array(arm_counts)
 
 percentage = float(chosen_times)/rounds * 100
-# plt.plot(range(rounds), [percentage] * rounds, label=f"{percentage:.2f}%")
-# plt.xlabel('Rounds')
-# plt.ylabel('Percentage of pulling the target arm (0)')
-# plt.show()
+plt.scatter(range(rounds), percentage[: rounds])
+plt.xlabel('Rounds')
+plt.ylabel('Percentage of pulling the target arm (0)')
+plt.show()
 
 
 # #plotting 1's and 0's distribution in 2d
