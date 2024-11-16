@@ -109,7 +109,7 @@ print(float(chosen_times)/rounds * 100)
 matrix = np.array(arm_counts)
 
 percentage = float(chosen_times)/rounds * 100
-plt.scatter(range(rounds), percentage[: rounds])
+plt.scatter(range(rounds), percentage[:rounds])
 plt.xlabel('Rounds')
 plt.ylabel('Percentage of pulling the target arm (0)')
 plt.show()
