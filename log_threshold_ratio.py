@@ -1,4 +1,3 @@
-""" Simulating click model """
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -12,8 +11,6 @@ rounds = 1000 # rounds
 ratios = [1, 2, 5, 100]  # list of ratios, fake to real
 frequencies = [0.1, 0.25, 0.5, 1.0]
 # probabilities = np.random.rand(n_arms) * 1 # probability from 0 to 1 of giving a reward of 1
-means = np.random.rand(n_arms) * 10 
-std_devs = np.random.rand(n_arms) 
 # lower_bound: set minimum (expected)
 # generate mean through [0,1]; no need to randomize standard deviation
 
@@ -30,7 +27,7 @@ class UCBRecommender:
         self.q = np.full(n_arms, Q0)
         self.rewards = np.zeros(n_arms)
         self.avg_rewards = np.zeros(n_arms)
-        self.clicks = np.zeros(n_arms)
+        self.pulls = np.zeros(n_arms)
         self.recommended_times = np.zeros(n_arms)
         self.round = 0
 
@@ -45,9 +42,9 @@ class UCBRecommender:
     def update(self, arm, reward, fake=False):
         if not fake:
             self.recommended_times[arm] += 1
-        self.clicks[arm] += 1
+        self.pulls[arm] += 1
         self.rewards[arm] += reward
-        self.avg_rewards[arm] = self.rewards[arm] / self.clicks[arm]
+        self.avg_rewards[arm] = self.rewards[arm] / self.pulls[arm]
 
 
 
@@ -71,31 +68,51 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, means, std_d
         if np.random.rand() < (frequency / math.log(i + math.e, math.e)): # threshold for attack frequency (log correlation to time step); different types of attacks
             for _ in range(ratio):
                 if real_arm != target_arm:
-                    # set -3sigma (minimum value to attack); test with and without log threshold
-                    real_users.update(real_arm, 0, fake=True)
+                    real_users.update(real_arm, min_value, fake=True)
                 else:
-                    real_users.update(real_arm, 1, fake=True)
+                    # real_users.update(real_arm, max_value, fake=True)
+                    continue
                     # no update for target arm recommended; or try set maximal value (opposite of attack wrong arm)
     return arm_counts, counter
 
-# look at the bad cases and design a separate algorithm that can be more effective
-# new attack based on observations from the real users can we design criterion to claim that its impossible
-# or not sufficient number of fake users
-
+trials = 1000
 frequency = frequencies[3]
 ratio = ratios[1]
 target_arm = 0
-arm_counts, chosen_times = simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, means, std_devs, ratio)
-print(chosen_times)
-print(float(chosen_times)/rounds * 100)
-#convert our 2darray to matrix
-matrix = np.array(arm_counts)
+chosen_ratios = []
+failed_attack = 0
+failed_attacks_reward = []
+for i in range(trials):
+    means = np.random.rand(n_arms)
+    std_devs = np.ones(n_arms)
+    # min_value = np.mean(means) -  np.sqrt(2 * np.log(n_arms))
+    # max_value = np.mean(means) + np.sqrt(2 * np.log(n_arms))
+    min_value = 1/2 -  np.sqrt(2 * np.log(n_arms)) # uses average of reward range (cannot see the actual rewards)
+    max_value = 1/2 + np.sqrt(2 * np.log(n_arms))
+    arm_counts, chosen_times = simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, means, std_devs, ratio)
+    chosen_ratio = float(chosen_times)/rounds * 100
+    if chosen_ratio < 50:
+        failed_attack += 1
+        failed_attacks_reward.append(means[0])
+    chosen_ratios.append(chosen_ratio)
 
-percentage = float(chosen_times)/rounds * 100
-plt.scatter(range(rounds), percentage[: rounds])
-plt.xlabel('Rounds')
-plt.ylabel('Percentage of pulling the target arm (0)')
+print(f"We have {failed_attack} failed_attacks out of {trials} total attacks")
+print(np.mean(np.array(failed_attacks_reward)))
+print(np.amax(np.array(failed_attacks_reward)))
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, trials + 1), chosen_ratios, marker='o', linestyle='-', color='blue')
+plt.axhline(y=np.mean(chosen_ratios), color='red', linestyle='--', label='Mean Ratio')
+plt.title('Chosen Ratio for Target Arm Across Simulations')
+plt.xlabel('Simulation Number')
+plt.ylabel('Chosen Ratio (%)')
+plt.legend()
+plt.grid(True)
 plt.show()
+# percentage = float(chosen_times)/rounds * 100
+# plt.scatter(range(rounds), percentage[: rounds])
+# plt.xlabel('Rounds')
+# plt.ylabel('Percentage of pulling the target arm (0)')
+# plt.show()
 
 
 # #plotting 1's and 0's distribution in 2d
@@ -125,3 +142,5 @@ plt.show()
 
 # 11/10: fake user detection (generate randomized rewards?); update gaussian distribution fake user update (check comments above)
 # two types of attacks (strong fake users vs multiple weak constrained fake users); latter calculate attack value through ucb algorithm inequalities
+
+# 12/5: linear fake users instead of linear attack value?
