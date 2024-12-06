@@ -61,6 +61,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, means, std_d
         if real_arm == target_arm:
             counter += 1
         #figure out some reward function
+        min_value = means[real_arm] - 3 * std_devs[real_arm]
         real_reward = np.random.normal(means[real_arm], std_devs[real_arm])
         real_users.update(real_arm, real_reward)
         # fake user arm selection
@@ -87,8 +88,8 @@ for i in range(trials):
     std_devs = np.ones(n_arms)
     # min_value = np.mean(means) -  np.sqrt(2 * np.log(n_arms))
     # max_value = np.mean(means) + np.sqrt(2 * np.log(n_arms))
-    min_value = 1/2 -  np.sqrt(2 * np.log(n_arms)) # uses average of reward range (cannot see the actual rewards)
-    max_value = 1/2 + np.sqrt(2 * np.log(n_arms))
+    # min_value = 1/2 -  np.sqrt(2 * np.log(n_arms)) # uses average of reward range (cannot see the actual rewards)
+    # max_value = 1/2 + np.sqrt(2 * np.log(n_arms))
     arm_counts, chosen_times = simulate_UCB_attack(n_arms, target_arm, rho, rounds, frequency, means, std_devs, ratio)
     chosen_ratio = float(chosen_times)/rounds * 100
     if chosen_ratio < 50:
