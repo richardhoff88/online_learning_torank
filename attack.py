@@ -91,12 +91,13 @@ def plot_attacks(trials = 1000, rounds = 1000, real_user_count = 10, n_arms = 10
     for i in range(trials):
         means = np.random.rand(n_arms)
         std_devs = np.full(n_arms, sigma)
-        _, attack_trials_list, chosen_times = simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma=sigma, delta=delta)
+        _, _, chosen_times = simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma=sigma, delta=delta)
         chosen_ratio = float(chosen_times)/rounds * 100
         if chosen_ratio < 90:
             failed_attack += 1
             failed_attacks_reward.append(means[0])
         chosen_ratios.append(chosen_ratio)
+
 
     print(f"We have {failed_attack} failed_attacks out of {trials} total attacks")
     print(chosen_ratios)
