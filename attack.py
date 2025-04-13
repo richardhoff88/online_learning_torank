@@ -83,7 +83,12 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_u
             if attack_flag and real_arm != target_arm:
                 N_target = arm_pulls[target_arm]
                 attack_beta = beta(N_target, sigma, n_arms, delta)
-                fake_reward = max(estimated_reward_distribution[target_arm] - 2 * attack_beta - 3 * sigma, -2)
+                mu_target = estimated_reward_distribution[target_arm]
+                mu_arm = estimated_reward_distribution[real_arm]
+                pulls_arm = recommender.pulls[real_arm]
+
+                desired_avg = mu_target - 2 * attack_beta - 3 * sigma
+                fake_reward = desired_avg * (pulls_arm + 1) - mu_arm * pulls_arm
                 recommender.update(real_arm, fake_reward)
                 attack_trials_list.append(round_num)
     return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
@@ -102,7 +107,7 @@ def plot_attacks(trials = 1000, rounds = 1000, real_user_count = 10, n_arms = 10
             if means[i] < min_val:
                 target_arm = i
                 min_val = means[i]
-                
+
         _, _, chosen_times, _ = simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma=sigma, delta=delta)
         chosen_ratio = float(chosen_times)/rounds * 100
         if chosen_ratio < 90:
