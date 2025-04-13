@@ -53,6 +53,8 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_u
     arm_counts = np.zeros((n_arms, rounds + n_arms))
     recommender = UCBRecommender(n_arms, rho)
     target_pull_counter = 0
+    cumulative_non_target_pull_counter = 0 
+    non_target_pull_list = []
     estimated_reward_distribution = np.zeros(n_arms)
     arm_pulls = np.zeros(n_arms)
     attack_flag = True
@@ -66,6 +68,9 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_u
         arm_counts[real_arm, round_num] += 1
         if real_arm == target_arm:
             target_pull_counter += 1
+        else:
+            cumulative_non_target_pull_counter += 1
+        non_target_pull_list.append(cumulative_non_target_pull_counter)
         # Figure out some reward function
         real_reward = get_real_reward(means, std_devs, real_arm)
         # Update estimated reward distribution
@@ -81,7 +86,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_u
                 fake_reward = estimated_reward_distribution[target_arm] - 2 * attack_beta - 3 * sigma
                 recommender.update(real_arm, fake_reward)
                 attack_trials_list.append(round_num)
-    return arm_counts, attack_trials_list, target_pull_counter
+    return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
 
 def plot_attacks(trials = 1000, rounds = 1000, real_user_count = 10, n_arms = 10, rho = 1.0, sigma=1, delta = 0.05):
     target_arm = n_arms - 1
@@ -91,7 +96,7 @@ def plot_attacks(trials = 1000, rounds = 1000, real_user_count = 10, n_arms = 10
     for i in range(trials):
         means = np.random.rand(n_arms)
         std_devs = np.full(n_arms, sigma)
-        _, _, chosen_times = simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma=sigma, delta=delta)
+        _, _, chosen_times, _ = simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma=sigma, delta=delta)
         chosen_ratio = float(chosen_times)/rounds * 100
         if chosen_ratio < 90:
             failed_attack += 1
@@ -111,7 +116,30 @@ def plot_attacks(trials = 1000, rounds = 1000, real_user_count = 10, n_arms = 10
     plt.grid(True)
     plt.show()
 
-plot_attacks()
+def plot_non_target_pulls_over_time(rounds=1000000, real_user_count=10, n_arms=10, rho=1.0, sigma=1, delta=0.05):
+    target_arm = n_arms - 1
+    means = np.random.rand(n_arms)
+    std_devs = np.full(n_arms, sigma)
+
+    _, _, _, non_target_pull_list = simulate_UCB_attack(
+        n_arms, target_arm, rho, rounds, means, std_devs,
+        real_user_count, sigma=sigma, delta=delta
+    )
+
+    # The x-axis will represent time (rounds > n_arms since that's when non-target tracking starts)
+    x_axis = list(range(n_arms + 1, n_arms + 1 + len(non_target_pull_list)))
+    print(non_target_pull_list)
+    plt.figure(figsize=(10, 6))
+    plt.plot(x_axis, non_target_pull_list, color='purple', label='Cumulative Non-Target Pulls')
+    plt.title('Cumulative Number of Non-Target Arm Pulls Over Time')
+    plt.xlabel('Round')
+    plt.ylabel('Cumulative Non-Target Pulls')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+plot_non_target_pulls_over_time()
 
 
 
