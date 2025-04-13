@@ -83,19 +83,26 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_u
             if attack_flag and real_arm != target_arm:
                 N_target = arm_pulls[target_arm]
                 attack_beta = beta(N_target, sigma, n_arms, delta)
-                fake_reward = estimated_reward_distribution[target_arm] - 2 * attack_beta - 3 * sigma
+                fake_reward = max(estimated_reward_distribution[target_arm] - 2 * attack_beta - 3 * sigma, -2)
                 recommender.update(real_arm, fake_reward)
                 attack_trials_list.append(round_num)
     return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
 
 def plot_attacks(trials = 1000, rounds = 1000, real_user_count = 10, n_arms = 10, rho = 1.0, sigma=1, delta = 0.05):
-    target_arm = n_arms - 1
+    # target_arm = n_arms - 1
     chosen_ratios = []
     failed_attack = 0
     failed_attacks_reward = []
     for i in range(trials):
         means = np.random.rand(n_arms)
         std_devs = np.full(n_arms, sigma)
+        min_val = math.inf
+        # Select target arm to be lowest mean
+        for i in range(len(means)):
+            if means[i] < min_val:
+                target_arm = i
+                min_val = means[i]
+                
         _, _, chosen_times, _ = simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma=sigma, delta=delta)
         chosen_ratio = float(chosen_times)/rounds * 100
         if chosen_ratio < 90:
@@ -117,10 +124,15 @@ def plot_attacks(trials = 1000, rounds = 1000, real_user_count = 10, n_arms = 10
     plt.show()
 
 def plot_non_target_pulls_over_time(rounds=1000000, real_user_count=10, n_arms=10, rho=1.0, sigma=1, delta=0.05):
-    target_arm = n_arms - 1
     means = np.random.rand(n_arms)
     std_devs = np.full(n_arms, sigma)
-
+    min_val = math.inf
+    # Select target arm to be lowest mean
+    for i in range(len(means)):
+        if means[i] < min_val:
+            target_arm = i
+            min_val = means[i]
+            
     _, _, _, non_target_pull_list = simulate_UCB_attack(
         n_arms, target_arm, rho, rounds, means, std_devs,
         real_user_count, sigma=sigma, delta=delta
@@ -128,7 +140,6 @@ def plot_non_target_pulls_over_time(rounds=1000000, real_user_count=10, n_arms=1
 
     # The x-axis will represent time (rounds > n_arms since that's when non-target tracking starts)
     x_axis = list(range(n_arms + 1, n_arms + 1 + len(non_target_pull_list)))
-    print(non_target_pull_list)
     plt.figure(figsize=(10, 6))
     plt.plot(x_axis, non_target_pull_list, color='purple', label='Cumulative Non-Target Pulls')
     plt.title('Cumulative Number of Non-Target Arm Pulls Over Time')
