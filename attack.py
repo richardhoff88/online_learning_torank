@@ -155,7 +155,8 @@ def plot_non_target_pulls_over_time(rounds=1000000, real_user_count=10, n_arms=1
     plt.tight_layout()
     plt.show()
 
-plot_non_target_pulls_over_time()
+if __name__ == "__main__":
+    plot_non_target_pulls_over_time()
 
 
 
