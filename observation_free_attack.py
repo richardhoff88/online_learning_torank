@@ -74,7 +74,8 @@ def plot_target_dominance():
         pulls_over_time.append(target_count / t)
 
     plt.plot(pulls_over_time)
-    plt.title("Fraction of Target Arm Chosen Over Time")
+    plt.suptitle("Fraction of Target Arm Chosen Over Time")
+    plt.title(ratio)
     plt.xlabel("Rounds")
     plt.ylabel("Target Arm Selection Ratio")
     plt.grid(True)
@@ -86,5 +87,5 @@ if __name__ == "__main__":
     n_arms, target_arm, rho, T, means, std_devs, C1, C2
     )
 
-    print(f"Target arm pull ratio: {target_count / T * 100}%")
+    ratio = (f"Target arm pull ratio: {target_count / T * 100:.3f}%")
     plot_target_dominance()
