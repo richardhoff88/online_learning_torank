@@ -37,16 +37,29 @@ def observation_free_attack(n_arms, target_arm, rho, T, means, std_devs, C1, C2)
 
     return pulls, rewards, target_arm_pulls
 
+# our params
+# T = 1000
+# n_arms = 10
+# rho = 1.0
+# sigma = 1
+# means = np.random.rand(n_arms)
+# std_devs = np.full(n_arms, sigma)
+# target_arm = np.argmin(means)  # worst arm
+# C1 = 300
+# C2 = 500
 
-T = 1000
-n_arms = 10
+# paper params
+T = 50000
+n_arms = 2
 rho = 1.0
 sigma = 1
-means = np.random.rand(n_arms)
+means = [0.9, 0.8]
 std_devs = np.full(n_arms, sigma)
-target_arm = np.argmin(means)  # worst arm
-C1 = 300
-C2 = 500
+target_arm = 1  
+
+# for UCB specifically
+C1 = 34
+C2 = 66
 
 
 
@@ -57,7 +70,8 @@ def plot_target_dominance():
     target_count = 0
     history = []
 
-    for t in range(1, T + 1):
+    # plot first 100 rounds 
+    for t in range(1, 101):
         arm = recommender.play()
         if t <= C1:
             reward_vec = np.zeros(n_arms)
