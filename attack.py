@@ -89,8 +89,10 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_u
 
                 desired_avg = mu_target - 2 * attack_beta - 3 * sigma
                 fake_reward = desired_avg * (pulls_arm + 1) - mu_arm * pulls_arm
+                # print(fake_reward)
                 recommender.update(real_arm, fake_reward)
                 attack_trials_list.append(round_num)
+                attack_flag = False
     return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
 
 def plot_attacks(trials = 1000, rounds = 1000, real_user_count = 10, n_arms = 10, rho = 1.0, sigma=1, delta = 0.05):
@@ -155,8 +157,50 @@ def plot_non_target_pulls_over_time(rounds=1000000, real_user_count=10, n_arms=1
     plt.tight_layout()
     plt.show()
 
+def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=10, rho=1.0, sigma=1, delta=0.05, R=20):
+    all_cumulative_pulls = []
+
+    for _ in range(R):
+        means = np.random.rand(n_arms)
+        std_devs = np.full(n_arms, sigma)
+        target_arm = np.argmin(means)
+
+        _, _, _, non_target_pull_list = simulate_UCB_attack(
+            n_arms, target_arm, rho, rounds, means, std_devs,
+            real_user_count, sigma=sigma, delta=delta
+        )
+
+        if len(non_target_pull_list) < rounds:
+            last_val = non_target_pull_list[-1]
+            non_target_pull_list += [last_val] * (rounds - len(non_target_pull_list))
+
+        all_cumulative_pulls.append(non_target_pull_list)
+
+    # Average over R runs
+    avg_cumulative = np.mean(all_cumulative_pulls, axis=0)
+    x_axis = np.arange(n_arms + 1, n_arms + 1 + len(avg_cumulative))
+
+    # Select 10 labeled points: 1e5, 2e5, ..., 1e6
+    labeled_xs = [int(e) for e in np.linspace(1e5, 1e6, 10)]
+    labeled_indices = [x - (n_arms + 1) for x in labeled_xs if x < len(avg_cumulative)]
+    labeled_ys = [avg_cumulative[i] for i in labeled_indices]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(x_axis, avg_cumulative, label='Average Cumulative Non-Target Pulls', color='darkorange')
+    plt.scatter([x_axis[i] for i in labeled_indices], labeled_ys, color='blue', zorder=5)
+    
+    for i, (x, y) in enumerate(zip([x_axis[i] for i in labeled_indices], labeled_ys)):
+        plt.text(x, y, f"{int(x):.0e}", fontsize=8, ha='center', va='bottom')
+
+    plt.title(f'Average Cumulative Non-Target Pulls Over Time (R={R})')
+    plt.xlabel('Round')
+    plt.ylabel('Avg Cumulative Non-Target Pulls')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
 if __name__ == "__main__":
     plot_non_target_pulls_over_time()
-
 
 

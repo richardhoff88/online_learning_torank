@@ -81,6 +81,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_u
                 fake_reward = estimated_reward_distribution[target_arm] - 2 * attack_beta - 3 * sigma
                 recommender.update(real_arm, fake_reward)
                 attack_trials_list.append(round_num)
+                attack_flag = False
     return arm_counts, attack_trials_list, target_pull_counter
 
 def plot_log_attacks(n_arms=10, rho=1.0, sigma=1, delta=0.05):
