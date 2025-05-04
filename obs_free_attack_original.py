@@ -132,8 +132,50 @@ def simulate_observation_free_trials(
 
     print(f"Average target arm pull ratio: {mean_ratio:.2f}% ± {std_ratio:.2f}%")
 
+def plot_observation_free_non_target_pulls(
+    T=10000, n_arms=2, rho=1.0, sigma=1.0,
+    means=[0.9, 0.8], C1=34, C2=66
+):
+    std_devs = np.full(n_arms, sigma)
+    target_arm = np.argmin(means)
+    recommender = UCBRecommender(n_arms, rho)
+    cumulative_non_target_pull_counter = 0
+    non_target_pull_list = []
+
+    for t in range(1, T + 1):
+        real_arm = recommender.play()
+
+        if t <= C1:
+            corrupted_rewards = np.zeros(n_arms)
+        elif t <= C1 + C2:
+            corrupted_rewards = np.zeros(n_arms)
+            corrupted_rewards[target_arm] = 1
+        else:
+            corrupted_rewards = np.array([
+                get_real_reward(means, std_devs, i) for i in range(n_arms)
+            ])
+        
+        reward = corrupted_rewards[real_arm]
+        recommender.update(real_arm, reward)
+
+        if real_arm != target_arm:
+            cumulative_non_target_pull_counter += 1
+        non_target_pull_list.append(cumulative_non_target_pull_counter)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, T + 1), non_target_pull_list, color='purple', label='Cumulative Non-Target Pulls')
+    plt.title("Cumulative Number of Non-Target Arm Pulls Over Time")
+    plt.xlabel("Round")
+    plt.ylabel("Cumulative Non-Target Pulls")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
 if __name__ == "__main__":
     simulate_observation_free_trials()
+    plot_observation_free_non_target_pulls()
 
 
 
