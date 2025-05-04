@@ -132,6 +132,7 @@ def simulate_observation_free_trials(
 
     print(f"Average target arm pull ratio: {mean_ratio:.2f}% ± {std_ratio:.2f}%")
 
+
 def plot_observation_free_non_target_pulls(
     T=100, n_arms=10, rho=1.0, sigma=1.0,
     means=[0.9, 0.8], C1=34, C2=66 # change to equations
@@ -179,10 +180,3 @@ if __name__ == "__main__":
 
 
 
-# if __name__ == "__main__":
-#     pulls, rewards, target_count = observation_free_attack(
-#     n_arms, target_arm, rho, T, means, std_devs, C1, C2
-#     )
-
-#     ratio = (f"Target arm pull ratio: {target_count / T * 100:.3f}%")
-#     plot_target_dominance()
