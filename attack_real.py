@@ -42,8 +42,9 @@ class UCBRecommender:
         self.rewards[arm] += reward
         self.avg_rewards[arm] = self.rewards[arm] / self.pulls[arm]
 
-def get_real_reward(reward_matrix, user_index, arm):
-    return reward_matrix[user_index, arm]
+def get_real_reward(reward_matrix, arm):
+    return np.mean(reward_matrix[:, arm])
+
 
 def beta(N, sigma, n_arms, delta):
     # Calculate the beta value for a given N
@@ -57,10 +58,8 @@ def simulate_UCB(n_arms, target_arm, rho, rounds, reward_matrix):
     non_target_pull_list = []
     arm_pulls = np.zeros(n_arms)
     attack_trials_list = []
-    all_user_indices = np.arange(reward_matrix.shape[0])
 
     for round_num in range(0, rounds + n_arms):
-        user_index = np.random.choice(all_user_indices)
         # use play function from ucb 
         # play() returns the index of the selected arm
         real_arm = recommender.play()
@@ -72,7 +71,7 @@ def simulate_UCB(n_arms, target_arm, rho, rounds, reward_matrix):
             cumulative_non_target_pull_counter += 1
         non_target_pull_list.append(cumulative_non_target_pull_counter)
         # Figure out some reward function
-        real_reward = get_real_reward(reward_matrix, user_index, real_arm)
+        real_reward = get_real_reward(reward_matrix, real_arm)
         # print(real_reward)
         # Update estimated reward distribution
         arm_pulls[real_arm] += 1    
@@ -89,10 +88,8 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, real_user_count, reward
     arm_pulls = np.zeros(n_arms)
     attack_flag = True
     attack_trials_list = []
-    all_user_indices = np.arange(reward_matrix.shape[0])
 
     for round_num in range(0, rounds + n_arms):
-        user_index = np.random.choice(all_user_indices)
         if round_num % real_user_count == 0:
             attack_flag = True
         # use play function from ucb 
@@ -106,8 +103,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, real_user_count, reward
             cumulative_non_target_pull_counter += 1
         non_target_pull_list.append(cumulative_non_target_pull_counter)
         # Figure out some reward function
-        real_reward = get_real_reward(reward_matrix, user_index, real_arm)
-        # print(real_reward)
+        real_reward = get_real_reward(reward_matrix, real_arm)
         # Update estimated reward distribution
         arm_pulls[real_arm] += 1
         estimated_reward_distribution[real_arm] = (estimated_reward_distribution[real_arm] * (arm_pulls[real_arm] - 1) + real_reward) / arm_pulls[real_arm]
@@ -125,12 +121,13 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, real_user_count, reward
                 desired_avg = mu_target - 2 * attack_beta - 3 * sigma
                 fake_reward = desired_avg * (pulls_arm + 1) - mu_arm * pulls_arm
                 # print(fake_reward)
+                fake_reward = max(0, fake_reward) # Attack constraint
                 recommender.update(real_arm, fake_reward)
                 attack_trials_list.append(round_num)
                 attack_flag = False
     return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
 
-def test_UCB(rounds=int(1e6), n_arms=10, rho=1.0):
+def test_UCB(rounds=int(1e6), n_arms=100, rho=1.0):
     reduced_matrix = np.load("ml_1000user_1000item.npy")
     selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
     # Slice the matrix to keep only n_arms
@@ -196,7 +193,7 @@ def plot_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=
     plt.tight_layout()
     plt.show()
 
-def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=100, rho=1.0, sigma=1, delta=0.05, R=5):
+def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=1, n_arms=10, rho=1.0, sigma=1, delta=0.05, R=10):
     all_cumulative_pulls = []
 
     for _ in range(R):
@@ -205,9 +202,14 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_a
         # Slice the matrix to keep only n_arms
         reduced_matrix = reduced_matrix[:, selected_movie_indices]
 
-        movie_interactions = np.sum(reduced_matrix, axis=0)
-        least_interacted_movie = np.argmin(movie_interactions)
-        target_arm = least_interacted_movie
+        # Use smallest reward arm as target
+        # movie_interactions = np.sum(reduced_matrix, axis=0)
+        # least_interacted_movie = np.argmin(movie_interactions)
+        # target_arm = least_interacted_movie
+
+        # Use random arm as target
+        target_arm = np.random.choice(n_arms)
+
 
         _, _, _, non_target_pull_list = simulate_UCB_attack(
         n_arms, target_arm, rho, rounds,
@@ -235,7 +237,7 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_a
     for i, (x, y) in enumerate(zip([x_axis[i] for i in labeled_indices], labeled_ys)):
         plt.text(x, y, f"{int(x):.0e}", fontsize=8, ha='center', va='bottom')
 
-    plt.title(f'Average Cumulative Non-Target Pulls Over Time (Trials={R})')
+    plt.title(f'Average Cumulative Non-Target Pulls Over Time (Trials={R}, Number of Arms={n_arms}, Real User to Fake User Ratio={real_user_count})')
     plt.xlabel('Round')
     plt.ylabel('Avg Cumulative Non-Target Pulls')
     plt.grid(True)
@@ -244,8 +246,9 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_a
     plt.show()
 
 if __name__ == "__main__":
-    test_UCB()
-    # plot_avg_non_target_pulls_over_time()
+    # test_UCB()
+    plot_avg_non_target_pulls_over_time()
+
 
 
 
