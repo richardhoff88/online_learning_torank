@@ -134,7 +134,7 @@ def simulate_observation_free_trials(
 
 def plot_observation_free_non_target_pulls(
     T=100, n_arms=10, rho=1.0, sigma=1.0,
-    means=[0.9, 0.8], C1=34, C2=66
+    means=[0.9, 0.8], C1=34, C2=66 # change to equations
 ):
     std_devs = np.full(n_arms, sigma)
     target_arm = np.argmin(means)
