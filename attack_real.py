@@ -49,6 +49,36 @@ def beta(N, sigma, n_arms, delta):
     # Calculate the beta value for a given N
     return math.sqrt((2 * sigma**2 / N) * math.log((math.pi**2 * N**2 * n_arms) / (math.e * delta)))
 
+def simulate_UCB(n_arms, target_arm, rho, rounds, reward_matrix):
+    arm_counts = np.zeros((n_arms, rounds + n_arms))
+    recommender = UCBRecommender(n_arms, rho)
+    target_pull_counter = 0
+    cumulative_non_target_pull_counter = 0 
+    non_target_pull_list = []
+    arm_pulls = np.zeros(n_arms)
+    attack_trials_list = []
+    all_user_indices = np.arange(reward_matrix.shape[0])
+
+    for round_num in range(0, rounds + n_arms):
+        user_index = np.random.choice(all_user_indices)
+        # use play function from ucb 
+        # play() returns the index of the selected arm
+        real_arm = recommender.play()
+        arm_counts[real_arm, round_num] += 1
+        # print(real_arm)
+        if real_arm == target_arm:
+            target_pull_counter += 1
+        else:
+            cumulative_non_target_pull_counter += 1
+        non_target_pull_list.append(cumulative_non_target_pull_counter)
+        # Figure out some reward function
+        real_reward = get_real_reward(reward_matrix, user_index, real_arm)
+        # print(real_reward)
+        # Update estimated reward distribution
+        arm_pulls[real_arm] += 1    
+        recommender.update(real_arm, real_reward)
+    return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
+
 def simulate_UCB_attack(n_arms, target_arm, rho, rounds, real_user_count, reward_matrix, sigma = 1, delta = 0.05):
     arm_counts = np.zeros((n_arms, rounds + n_arms))
     recommender = UCBRecommender(n_arms, rho)
@@ -69,6 +99,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, real_user_count, reward
         # play() returns the index of the selected arm
         real_arm = recommender.play()
         arm_counts[real_arm, round_num] += 1
+        # print(real_arm)
         if real_arm == target_arm:
             target_pull_counter += 1
         else:
@@ -76,7 +107,7 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, real_user_count, reward
         non_target_pull_list.append(cumulative_non_target_pull_counter)
         # Figure out some reward function
         real_reward = get_real_reward(reward_matrix, user_index, real_arm)
-        print(real_reward)
+        # print(real_reward)
         # Update estimated reward distribution
         arm_pulls[real_arm] += 1
         estimated_reward_distribution[real_arm] = (estimated_reward_distribution[real_arm] * (arm_pulls[real_arm] - 1) + real_reward) / arm_pulls[real_arm]
@@ -99,24 +130,59 @@ def simulate_UCB_attack(n_arms, target_arm, rho, rounds, real_user_count, reward
                 attack_flag = False
     return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
 
-
-
-def plot_non_target_pulls_over_time(rounds=100000, real_user_count=10, n_arms=1000, rho=1.0, sigma=1, delta=0.05):
+def test_UCB(rounds=int(1e6), n_arms=10, rho=1.0):
     reduced_matrix = np.load("ml_1000user_1000item.npy")
-    means = np.nanmean(reduced_matrix, axis=0)
-    print(means)
-    min_val = math.inf
+    selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
+    # Slice the matrix to keep only n_arms
+    reduced_matrix = reduced_matrix[:, selected_movie_indices]
 
-    # Select target arm to be lowest mean
-    for i in range(len(means)):
-        if means[i] < min_val:
-            target_arm = i
-            min_val = means[i]
-            
-    _, _, _, non_target_pull_list = simulate_UCB_attack(
+    movie_interactions = np.sum(reduced_matrix, axis=0)
+    most_interacted_movie = np.argmax(movie_interactions)
+    target_arm = most_interacted_movie
+    print(target_arm)
+    print(f"Movie {most_interacted_movie} has the most interactions with {int(movie_interactions[most_interacted_movie])} interactions.")
+
+    _, _, target_pull_counter, non_target_pull_list = simulate_UCB(
+            n_arms, target_arm, rho, rounds,
+            reduced_matrix
+        )
+    print(target_pull_counter)
+
+    # The x-axis will represent time (rounds > n_arms since that's when non-target tracking starts)
+    x_axis = list(range(n_arms + 1, n_arms + 1 + len(non_target_pull_list)))
+    plt.figure(figsize=(10, 6))
+    plt.plot(x_axis, non_target_pull_list, color='purple', label='Non-Most-Interacted Arm Pulls')
+    plt.title('Cumulative Number of Non-Most-Interacted Arm Pulls Over Time')
+    plt.xlabel('Round')
+    plt.ylabel('Cumulative Pulls')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+def plot_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=10, rho=1.0, sigma=1, delta=0.05):
+    reduced_matrix = np.load("ml_1000user_1000item.npy")
+    selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
+    # Slice the matrix to keep only n_arms
+    reduced_matrix = reduced_matrix[:, selected_movie_indices]
+
+
+    movie_interactions = np.sum(reduced_matrix, axis=0)
+    # most_interacted_movie = np.argmax(movie_interactions)
+    # target_arm = most_interacted_movie
+    # print(target_arm)
+    # print(f"Movie {most_interacted_movie} has the most interactions with {int(movie_interactions[most_interacted_movie])} interactions.")
+
+    least_interacted_movie = np.argmin(movie_interactions)
+    target_arm = least_interacted_movie
+    print(target_arm)
+    print(f"Movie {least_interacted_movie} has the least interactions with {int(movie_interactions[least_interacted_movie])} interactions.")
+
+    _, _, target_pull_counter, non_target_pull_list = simulate_UCB_attack(
         n_arms, target_arm, rho, rounds,
         real_user_count, reduced_matrix, sigma=sigma, delta=delta
     )
+    print(target_pull_counter)
 
     # The x-axis will represent time (rounds > n_arms since that's when non-target tracking starts)
     x_axis = list(range(n_arms + 1, n_arms + 1 + len(non_target_pull_list)))
@@ -130,19 +196,23 @@ def plot_non_target_pulls_over_time(rounds=100000, real_user_count=10, n_arms=10
     plt.tight_layout()
     plt.show()
 
-def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=1000, rho=1.0, sigma=1, delta=0.05, R=20):
+def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=1000, rho=1.0, sigma=1, delta=0.05, R=2):
     all_cumulative_pulls = []
 
     for _ in range(R):
-        means = np.random.rand(n_arms)
-        std_devs = np.full(n_arms, sigma)
-        target_arm = np.argmin(means)
+        reduced_matrix = np.load("ml_1000user_1000item.npy")
+        selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
+        # Slice the matrix to keep only n_arms
+        reduced_matrix = reduced_matrix[:, selected_movie_indices]
+
+        movie_interactions = np.sum(reduced_matrix, axis=0)
+        least_interacted_movie = np.argmin(movie_interactions)
+        target_arm = least_interacted_movie
 
         _, _, _, non_target_pull_list = simulate_UCB_attack(
-            n_arms, target_arm, rho, rounds, means, std_devs,
-            real_user_count, sigma=sigma, delta=delta
-        )
-
+        n_arms, target_arm, rho, rounds,
+        real_user_count, reduced_matrix, sigma=sigma, delta=delta
+    )
         if len(non_target_pull_list) < rounds:
             last_val = non_target_pull_list[-1]
             non_target_pull_list += [last_val] * (rounds - len(non_target_pull_list))
@@ -165,7 +235,7 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_a
     for i, (x, y) in enumerate(zip([x_axis[i] for i in labeled_indices], labeled_ys)):
         plt.text(x, y, f"{int(x):.0e}", fontsize=8, ha='center', va='bottom')
 
-    plt.title(f'Average Cumulative Non-Target Pulls Over Time (R={R})')
+    plt.title(f'Average Cumulative Non-Target Pulls Over Time (Rounds={R})')
     plt.xlabel('Round')
     plt.ylabel('Avg Cumulative Non-Target Pulls')
     plt.grid(True)
@@ -174,6 +244,8 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_a
     plt.show()
 
 if __name__ == "__main__":
-    plot_non_target_pulls_over_time()
+    # test_UCB()
+    plot_avg_non_target_pulls_over_time()
+
 
 
