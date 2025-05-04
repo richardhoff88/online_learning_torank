@@ -133,7 +133,7 @@ def simulate_observation_free_trials(
     print(f"Average target arm pull ratio: {mean_ratio:.2f}% ± {std_ratio:.2f}%")
 
 def plot_observation_free_non_target_pulls(
-    T=10000, n_arms=2, rho=1.0, sigma=1.0,
+    T=100, n_arms=10, rho=1.0, sigma=1.0,
     means=[0.9, 0.8], C1=34, C2=66
 ):
     std_devs = np.full(n_arms, sigma)
