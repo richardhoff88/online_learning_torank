@@ -196,7 +196,7 @@ def plot_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=
     plt.tight_layout()
     plt.show()
 
-def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=1000, rho=1.0, sigma=1, delta=0.05, R=2):
+def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=100, rho=1.0, sigma=1, delta=0.05, R=5):
     all_cumulative_pulls = []
 
     for _ in range(R):
@@ -235,7 +235,7 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_a
     for i, (x, y) in enumerate(zip([x_axis[i] for i in labeled_indices], labeled_ys)):
         plt.text(x, y, f"{int(x):.0e}", fontsize=8, ha='center', va='bottom')
 
-    plt.title(f'Average Cumulative Non-Target Pulls Over Time (Rounds={R})')
+    plt.title(f'Average Cumulative Non-Target Pulls Over Time (Trials={R})')
     plt.xlabel('Round')
     plt.ylabel('Avg Cumulative Non-Target Pulls')
     plt.grid(True)
@@ -244,8 +244,8 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_a
     plt.show()
 
 if __name__ == "__main__":
-    # test_UCB()
-    plot_avg_non_target_pulls_over_time()
+    test_UCB()
+    # plot_avg_non_target_pulls_over_time()
 
 
 
