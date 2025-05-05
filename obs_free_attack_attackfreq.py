@@ -64,4 +64,11 @@ def experiment_attack_frequency(T=50000, means=[0.9, 0.8], rho=1.0, sigma=1.0, d
 
 
 if __name__ == "__main__":
-    experiment_attack_frequency()
+    experiment_attack_frequency(
+        T=1000000,
+        means=np.random.rand(10),
+        rho=1.0,
+        sigma=1.0,
+        delta0=0.05
+    )
+
