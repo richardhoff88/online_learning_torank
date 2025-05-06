@@ -1,7 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import math
+import sys
+import os
 
+
+sys.path.append(os.path.abspath(".."))
 from attack import UCBRecommender, get_real_reward 
 
 def simulate_frequency_limited_attack(T, n_arms, target_arm, R, means, std_devs, rho, delta0):

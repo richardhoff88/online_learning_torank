@@ -2,7 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import math
+import sys
+import os
 
+
+sys.path.append(os.path.abspath(".."))
 from attack import UCBRecommender, get_real_reward
 
 
