@@ -57,7 +57,7 @@ def sequential_injection_attack(n_arms, target_arm, rho, T, means, std_devs, R, 
     return target_pulls, attack_trials, target_pull_ratios
 
 
-def experiment_sequential_injection(T=100000, n_arms=10, rho=1.0, sigma=1.0, delta0=0.05):
+def experiment_synthetic_sequential_injection(T=100000, n_arms=10, rho=1.0, sigma=1.0, delta0=0.05):
     means = np.random.rand(n_arms)
     std_devs = np.full(n_arms, sigma)
     target_arm = np.argmin(means)
@@ -82,4 +82,4 @@ def experiment_sequential_injection(T=100000, n_arms=10, rho=1.0, sigma=1.0, del
 
 
 if __name__ == "__main__":
-    experiment_sequential_injection()
+    experiment_synthetic_sequential_injection()

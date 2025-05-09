@@ -47,9 +47,99 @@ def get_real_reward(means, std_devs, arm):
 
 def beta(N, sigma, n_arms, delta):
     # Calculate the beta value for a given N
-    return math.sqrt((2 * sigma**2 / N) * math.log((math.pi**2 * N**2 * n_arms) / (math.e * delta)))
+    return math.sqrt((2 * sigma**2 / N) * math.log((math.pi**2 * N**2 * n_arms) / (3 * delta)))
 
-def simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma = 1, delta = 0.05):
+def simulate_adaptive_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma = 1, delta = 0.05):
+    arm_counts = np.zeros((n_arms, rounds + n_arms))
+    recommender = UCBRecommender(n_arms, rho)
+    target_pull_counter = 0
+    cumulative_non_target_pull_counter = 0 
+    non_target_pull_list = []
+    estimated_reward_distribution = np.zeros(n_arms)
+    arm_pulls = np.zeros(n_arms)
+    attack_flag = True
+    attack_trials_list = []
+    for round_num in range(0, rounds + n_arms):
+        if round_num % real_user_count == 0:
+            attack_flag = True
+        # use play function from ucb 
+        # play() returns the index of the selected arm
+        real_arm = recommender.play()
+        arm_counts[real_arm, round_num] += 1
+        if real_arm == target_arm:
+            target_pull_counter += 1
+        else:
+            cumulative_non_target_pull_counter += 1
+        non_target_pull_list.append(cumulative_non_target_pull_counter)
+        # Figure out some reward function
+        real_reward = get_real_reward(means, std_devs, real_arm)
+        # Update estimated reward distribution
+        arm_pulls[real_arm] += 1
+        estimated_reward_distribution[real_arm] = (estimated_reward_distribution[real_arm] * (arm_pulls[real_arm] - 1) + real_reward) / arm_pulls[real_arm]
+    
+        recommender.update(real_arm, real_reward)
+        # fake user arm selection
+        if round_num > n_arms:
+            if attack_flag and real_arm != target_arm:
+                N_target = arm_pulls[target_arm]
+                attack_beta = beta(N_target, sigma, n_arms, delta)
+                mu_target = estimated_reward_distribution[target_arm]
+                mu_arm = estimated_reward_distribution[real_arm]
+                pulls_arm = recommender.pulls[real_arm]
+
+                desired_avg = mu_target - 2 * attack_beta - 3 * sigma
+                fake_reward = desired_avg * (pulls_arm + 1) - mu_arm * pulls_arm
+                # print(fake_reward)
+                recommender.update(real_arm, fake_reward)
+                attack_trials_list.append(round_num)
+                attack_flag = False
+    return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
+
+def simulate_single_injection_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, sigma = 1, delta = 0.05):
+    arm_counts = np.zeros((n_arms, rounds + n_arms))
+    recommender = UCBRecommender(n_arms, rho)
+    target_pull_counter = 0
+    cumulative_non_target_pull_counter = 0 
+    non_target_pull_list = []
+    estimated_reward_distribution = np.zeros(n_arms)
+    arm_pulls = np.zeros(n_arms)
+    attack_trials_list = []
+    attacked_list = []
+    for round_num in range(0, rounds + n_arms):
+        # use play function from ucb 
+        # play() returns the index of the selected arm
+        real_arm = recommender.play()
+        arm_counts[real_arm, round_num] += 1
+        if real_arm == target_arm:
+            target_pull_counter += 1
+        else:
+            cumulative_non_target_pull_counter += 1
+        non_target_pull_list.append(cumulative_non_target_pull_counter)
+        # Figure out some reward function
+        real_reward = get_real_reward(means, std_devs, real_arm)
+        # Update estimated reward distribution
+        arm_pulls[real_arm] += 1
+        estimated_reward_distribution[real_arm] = (estimated_reward_distribution[real_arm] * (arm_pulls[real_arm] - 1) + real_reward) / arm_pulls[real_arm]
+    
+        recommender.update(real_arm, real_reward)
+        # fake user arm selection
+        if round_num > n_arms:
+            if real_arm not in attacked_list and real_arm != target_arm:
+                attacked_list.append(target_arm) # ensure every arm is attacked only once (single injection)
+                N_target = arm_pulls[target_arm]
+                attack_beta = beta(N_target, sigma, n_arms, delta)
+                mu_target = estimated_reward_distribution[target_arm]
+                mu_arm = estimated_reward_distribution[real_arm]
+                pulls_arm = recommender.pulls[real_arm]
+
+                desired_avg = mu_target - 2 * attack_beta - 3 * sigma
+                fake_reward = desired_avg * (pulls_arm + 1) - mu_arm * pulls_arm
+                print(fake_reward)
+                recommender.update(real_arm, fake_reward)
+                attack_trials_list.append(round_num)
+    return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
+
+def simulate_injection_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma = 1, delta = 0.05):
     arm_counts = np.zeros((n_arms, rounds + n_arms))
     recommender = UCBRecommender(n_arms, rho)
     target_pull_counter = 0
@@ -110,7 +200,7 @@ def plot_attacks(trials = 1000, rounds = 1000, real_user_count = 10, n_arms = 10
                 target_arm = i
                 min_val = means[i]
 
-        _, _, chosen_times, _ = simulate_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma=sigma, delta=delta)
+        _, _, chosen_times, _ = simulate_adaptive__attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma=sigma, delta=delta)
         chosen_ratio = float(chosen_times)/rounds * 100
         if chosen_ratio < 90:
             failed_attack += 1
@@ -157,7 +247,7 @@ def plot_non_target_pulls_over_time(rounds=1000000, real_user_count=10, n_arms=1
     plt.tight_layout()
     plt.show()
 
-def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=10, rho=1.0, sigma=1, delta=0.05, R=20):
+def plot_avg_non_target_pulls_over_time(rounds=int(1e6), n_arms=10, rho=1.0, sigma=1, delta=0.05, R=1, real_user_count = 10, attack_type = None):
     all_cumulative_pulls = []
 
     for _ in range(R):
@@ -165,9 +255,8 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_a
         std_devs = np.full(n_arms, sigma)
         target_arm = np.argmin(means)
 
-        _, _, _, non_target_pull_list = simulate_UCB_attack(
-            n_arms, target_arm, rho, rounds, means, std_devs,
-            real_user_count, sigma=sigma, delta=delta
+        _, _, _, non_target_pull_list = simulate_single_injection_UCB_attack(
+            n_arms, target_arm, rho, rounds, means, std_devs, sigma=sigma, delta=delta
         )
 
         if len(non_target_pull_list) < rounds:
@@ -201,6 +290,6 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_a
     plt.show()
 
 if __name__ == "__main__":
-    plot_non_target_pulls_over_time()
+    plot_avg_non_target_pulls_over_time(attack_type="single_injection")
 
 

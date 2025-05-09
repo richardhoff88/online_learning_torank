@@ -48,7 +48,7 @@ def get_real_reward(reward_matrix, arm):
 
 def beta(N, sigma, n_arms, delta):
     # Calculate the beta value for a given N
-    return math.sqrt((2 * sigma**2 / N) * math.log((math.pi**2 * N**2 * n_arms) / (math.e * delta)))
+    return math.sqrt((2 * sigma**2 / N) * math.log((math.pi**2 * N**2 * n_arms) / (3 * delta)))
 
 def simulate_UCB(n_arms, target_arm, rho, rounds, reward_matrix):
     arm_counts = np.zeros((n_arms, rounds + n_arms))
@@ -185,7 +185,7 @@ def plot_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=
     x_axis = list(range(n_arms + 1, n_arms + 1 + len(non_target_pull_list)))
     plt.figure(figsize=(10, 6))
     plt.plot(x_axis, non_target_pull_list, color='purple', label='Cumulative Non-Target Pulls')
-    plt.title('Cumulative Number of Non-Target Arm Pulls Over Time')
+    plt.title(f'Cumulative Number of Non-Target Arm Pulls Over Time (Attack Frequency = {real_user_count})')
     plt.xlabel('Round')
     plt.ylabel('Cumulative Non-Target Pulls')
     plt.grid(True)
@@ -193,7 +193,7 @@ def plot_non_target_pulls_over_time(rounds=int(1e6), real_user_count=10, n_arms=
     plt.tight_layout()
     plt.show()
 
-def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=1, n_arms=10, rho=1.0, sigma=1, delta=0.05, R=10):
+def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=2, n_arms=10, rho=1.0, sigma=1, delta=0.05, R=10):
     all_cumulative_pulls = []
 
     for _ in range(R):
@@ -203,12 +203,12 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=1, n_ar
         reduced_matrix = reduced_matrix[:, selected_movie_indices]
 
         # Use smallest reward arm as target
-        # movie_interactions = np.sum(reduced_matrix, axis=0)
-        # least_interacted_movie = np.argmin(movie_interactions)
-        # target_arm = least_interacted_movie
+        movie_interactions = np.sum(reduced_matrix, axis=0)
+        least_interacted_movie = np.argmin(movie_interactions)
+        target_arm = least_interacted_movie
 
-        # Use random arm as target
-        target_arm = np.random.choice(n_arms)
+        # # Use random arm as target
+        # target_arm = np.random.choice(n_arms)
 
 
         _, _, _, non_target_pull_list = simulate_UCB_attack(
@@ -237,7 +237,7 @@ def plot_avg_non_target_pulls_over_time(rounds=int(1e6), real_user_count=1, n_ar
     for i, (x, y) in enumerate(zip([x_axis[i] for i in labeled_indices], labeled_ys)):
         plt.text(x, y, f"{int(x):.0e}", fontsize=8, ha='center', va='bottom')
 
-    plt.title(f'Average Cumulative Non-Target Pulls Over Time (Trials={R}, Number of Arms={n_arms}, Real User to Fake User Ratio={real_user_count})')
+    plt.title(f'Average Cumulative Non-Target Pulls Over Time (Trials={R}, Number of Arms={n_arms}, Attack Frequency = {real_user_count})')
     plt.xlabel('Round')
     plt.ylabel('Avg Cumulative Non-Target Pulls')
     plt.grid(True)
