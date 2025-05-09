@@ -47,7 +47,10 @@ def get_real_reward(means, std_devs, arm):
 
 def beta(N, sigma, n_arms, delta):
     # Calculate the beta value for a given N
-    return math.sqrt((2 * sigma**2 / N) * math.log((math.pi**2 * N**2 * n_arms) / (3 * delta)))
+    N = max(N, 1)
+    log_argument = max((math.pi**2 * N**2 * n_arms) / (3 * delta), 1)
+
+    return math.sqrt((2 * sigma**2 / N) * math.log(log_argument))
 
 def simulate_adaptive_UCB_attack(n_arms, target_arm, rho, rounds, means, std_devs, real_user_count, sigma = 1, delta = 0.05):
     arm_counts = np.zeros((n_arms, rounds + n_arms))
@@ -125,7 +128,7 @@ def simulate_single_injection_UCB_attack(n_arms, target_arm, rho, rounds, means,
         # fake user arm selection
         if round_num > n_arms:
             if real_arm not in attacked_list and real_arm != target_arm:
-                attacked_list.append(target_arm) # ensure every arm is attacked only once (single injection)
+                attacked_list.append(real_arm) # ensure every arm is attacked only once (single injection)
                 N_target = arm_pulls[target_arm]
                 attack_beta = beta(N_target, sigma, n_arms, delta)
                 mu_target = estimated_reward_distribution[target_arm]
@@ -134,7 +137,7 @@ def simulate_single_injection_UCB_attack(n_arms, target_arm, rho, rounds, means,
 
                 desired_avg = mu_target - 2 * attack_beta - 3 * sigma
                 fake_reward = desired_avg * (pulls_arm + 1) - mu_arm * pulls_arm
-                print(fake_reward)
+                # print(fake_reward)
                 recommender.update(real_arm, fake_reward)
                 attack_trials_list.append(round_num)
     return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list
