@@ -23,6 +23,7 @@ def sequential_injection_attack(n_arms, target_arm, rho, T, means, std_devs, n_t
     estimated_rewards = np.zeros(n_arms)
     arm_pulls = np.zeros(n_arms)
     target_pull_ratios = []
+    attack_cost = 0.0
 
     for t in range(1, T + 1 + n_arms):
         arm = recommender.play()
@@ -41,6 +42,7 @@ def sequential_injection_attack(n_arms, target_arm, rho, T, means, std_devs, n_t
 
                 if bounded:
                     rf = np.clip(rf, 0.0, 1.0)
+                attack_cost += abs(rf)
                 recommender.update(arm, rf)
                 attack_trials.append(t)
 
@@ -52,7 +54,7 @@ def sequential_injection_attack(n_arms, target_arm, rho, T, means, std_devs, n_t
 
         recommender.update(arm, reward)
 
-    return target_pulls, attack_trials, target_pull_ratios
+    return target_pulls, attack_trials, target_pull_ratios, attack_cost
 
 def sequential_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, n_tilde, sigma = 1, delta0 = 0.05, bounded=False):
     recommender = UCBRecommender(n_arms, rho)
@@ -61,6 +63,7 @@ def sequential_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, 
     estimated_rewards = np.zeros(n_arms)
     arm_pulls = np.zeros(n_arms)
     target_pull_ratios = []
+    attack_cost = 0.0
 
     for t in range(1, T + 1 + n_arms):
         arm = recommender.play()
@@ -78,6 +81,7 @@ def sequential_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, 
 
                 if bounded:
                     rf = np.clip(rf, 0.0, 1.0)
+                attack_cost += abs(rf)
                 recommender.update(arm, rf)
                 attack_trials.append(t)
 
@@ -89,9 +93,9 @@ def sequential_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, 
 
         recommender.update(arm, reward)
 
-    return target_pulls, attack_trials, target_pull_ratios
+    return target_pulls, attack_trials, target_pull_ratios, attack_cost
 
-def experiment_synthetic_sequential_injection(T=10000, n_arms=10, n_tilde=10, rho=1.0, sigma=1.0, delta0=0.05, bounded = False, trials=10):
+def experiment_synthetic_sequential_injection(T=int(1e4), n_arms=10, n_tilde=10, rho=1.0, sigma=1.0, delta0=0.05, bounded = False, trials=10):
     all_ratios = []
 
     for _ in range(trials):
@@ -99,7 +103,7 @@ def experiment_synthetic_sequential_injection(T=10000, n_arms=10, n_tilde=10, rh
         std_devs = np.full(n_arms, sigma)
         target_arm = np.argmin(means)
 
-        target_pulls, attack_trials, target_pull_ratios = sequential_injection_attack(
+        target_pulls, attack_trials, target_pull_ratios, attack_cost = sequential_injection_attack(
             n_arms, target_arm, rho, T, means, std_devs, n_tilde=n_tilde, delta0=delta0, bounded=bounded
         )
         all_ratios.append(target_pull_ratios)
@@ -118,7 +122,7 @@ def experiment_synthetic_sequential_injection(T=10000, n_arms=10, n_tilde=10, rh
 
     print(f"Completed {trials} trials.")
 
-def experiment_real_sequential_injection(T=10000, n_arms=10, rho=1.0, n_tilde = 10, sigma=1.0, delta0=0.05, bounded = False, trials=10):
+def experiment_real_sequential_injection(T=int(1e4), n_arms=10, rho=1.0, n_tilde = 10, sigma=1.0, delta0=0.05, bounded = False, trials=10):
     all_ratios = []
     for _ in range(trials):
         reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
@@ -130,9 +134,10 @@ def experiment_real_sequential_injection(T=10000, n_arms=10, rho=1.0, n_tilde = 
         least_interacted_movie = np.argmin(movie_interactions)
         target_arm = least_interacted_movie
 
-        target_pulls, attack_trials, target_pull_ratios = sequential_injection_attack_real(
+        target_pulls, attack_trials, target_pull_ratios, attack_cost = sequential_injection_attack_real(
             n_arms, target_arm, rho, T, reduced_matrix, n_tilde=n_tilde, sigma=sigma, delta0=delta0, bounded=bounded
         )
+        print(attack_cost)
         all_ratios.append(target_pull_ratios)
 
     avg_ratios = np.mean(all_ratios, axis=0)
@@ -149,5 +154,69 @@ def experiment_real_sequential_injection(T=10000, n_arms=10, rho=1.0, n_tilde = 
 
     print(f"Completed {trials} trials.")
 
+def plot_attack_cost(n_arms=10, rho=1.0, n_tilde=10, sigma=1.0, delta0=0.05, bounded=False, trials=10):
+    avg_costs = []
+    T_values = np.logspace(1, 6, num=10, dtype=int)
+    for T in T_values:
+        trial_costs = []
+        for _ in range(trials):
+            means = np.random.rand(n_arms)
+            std_devs = np.full(n_arms, sigma)
+            target_arm = np.argmin(means)
+
+            target_pulls, attack_trials, target_pull_ratios, attack_cost = sequential_injection_attack(
+            n_arms, target_arm, rho, T, means, std_devs, n_tilde=n_tilde, delta0=delta0, bounded=bounded)
+
+            trial_costs.append(attack_cost)
+        
+        avg_costs.append(np.mean(trial_costs))
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(T_values, avg_costs, marker='o')
+    plt.xlabel("T (Rounds)")
+    plt.ylabel("Average Attack Cost")
+    plt.title(f"Attack Cost vs. T for Sequential Injection Attack (Synthetic Dataset) - {'Bounded' if bounded else 'Unbounded'}")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+def plot_attack_cost_real(n_arms=10, rho=1.0, n_tilde=10, sigma=1.0, delta0=0.05, bounded=False, trials=10):
+    avg_costs = []
+    T_values = np.logspace(1, 6, num=10, dtype=int)
+    for T in T_values:
+        trial_costs = []
+        for _ in range(trials):
+            reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
+            selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
+            reduced_matrix = reduced_matrix[:, selected_movie_indices]
+            
+            movie_interactions = np.sum(reduced_matrix, axis=0)
+            target_arm = np.argmin(movie_interactions)
+
+            _, _, _, attack_cost = sequential_injection_attack_real(
+                n_arms=n_arms,
+                target_arm=target_arm,
+                rho=rho,
+                T=T,
+                reward_matrix=reduced_matrix,
+                n_tilde=n_tilde,
+                sigma=sigma,
+                delta0=delta0,
+                bounded=bounded
+            )
+            trial_costs.append(attack_cost)
+        
+        avg_costs.append(np.mean(trial_costs))
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(T_values, avg_costs, marker='o')
+    plt.xlabel("T (Rounds)")
+    plt.ylabel("Average Attack Cost")
+    plt.title(f"Attack Cost vs. T for Sequential Injection Attack (MovieLens Dataset) - {'Bounded' if bounded else 'Unbounded'}")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
 if __name__ == "__main__":
-    experiment_real_sequential_injection(bounded = True, trials=10)
+    # experiment_real_sequential_injection(bounded = False, trials=10)
+    plot_attack_cost(bounded=False)
