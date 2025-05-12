@@ -165,4 +165,4 @@ def experiment_real_simultaneous_bounded_injection(T=int(1e4), n_arms=10, rho=1.
     plt.show()
 
 if __name__ == "__main__":
-    experiment_real_simultaneous_bounded_injection()
+    experiment_simultaneous_bounded_injection(a_tilde=0.0)
