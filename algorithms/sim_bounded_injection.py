@@ -17,6 +17,8 @@ def calculate_a_tilde(mu_k, n_arms, sigma, delta0):
     a_tilde = mu_k - 3 * beta_one - 3 * sigma * delta0
     return max(a_tilde, 0.0) 
 
+def get_reward_from_matrix(reward_matrix, arm):
+    return np.mean(reward_matrix[:, arm])
 
 def simultaneous_bounded_injection_attack(n_arms, target_arm, rho, T, means, std_devs, a_tilde, delta0=0.05):
     recommender = UCBRecommender(n_arms, rho)
@@ -57,6 +59,44 @@ def simultaneous_bounded_injection_attack(n_arms, target_arm, rho, T, means, std
 
     return target_pulls, attack_trials, target_pull_ratios
 
+def simultaneous_bounded_injection_attack_real(n_arms, target_arm, rho, T, means, std_devs, a_tilde=0, delta0=0.05):
+    recommender = UCBRecommender(n_arms, rho)
+    target_pulls = 0
+    attack_trials = []
+    sigma = std_devs[0]
+    estimated_rewards = np.zeros(n_arms)
+    arm_pulls = np.zeros(n_arms)
+    target_pull_ratios = []
+
+    for t in range(1, T + 1):
+        arm = recommender.play()
+        reward = get_real_reward(means, std_devs, arm)
+
+        # Update empirical reward
+        arm_pulls[arm] += 1
+        estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
+
+        # SBI Attack Condition
+        if arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)):
+            mu_i = estimated_rewards[arm]
+            mu_k = estimated_rewards[target_arm]
+            l_hat = mu_k - 2 * beta(arm_pulls[target_arm], sigma, n_arms, delta0)
+
+            # Number of injection rounds n_tilde
+            n_tilde = math.ceil((mu_i - l_hat) * math.log(T / (delta0**2)) / max(mu_i - a_tilde, 1e-5))
+            for _ in range(int(n_tilde)):
+                recommender.update(arm, a_tilde)
+            attack_trials.append(t)
+
+        if arm == target_arm:
+            target_pulls += 1
+
+        target_pull_ratio = target_pulls / t
+        target_pull_ratios.append(target_pull_ratio)
+
+        recommender.update(arm, reward)
+
+    return target_pulls, attack_trials, target_pull_ratios
 
 def experiment_simultaneous_bounded_injection(T=int(1e4), n_arms=10, rho=1.0, sigma=1.0, a_tilde=0.0, delta0=0.05, trials=10):
     all_ratios = []
