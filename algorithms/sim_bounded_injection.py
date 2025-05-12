@@ -46,7 +46,7 @@ def simultaneous_bounded_injection_attack(n_arms, target_arm, rho, T, means, std
 
                 # Number of injection rounds n_tilde
                 a_tilde_new = min(a_tilde, mu_k - 3 * beta(arm_pulls[target_arm], sigma, n_arms, delta0) - 3 * sigma * delta0)
-                n_tilde = (mu_i - l_hat) * math.log(T) / l_hat - a_tilde_new / delta0**2
+                n_tilde = (mu_i - l_hat) * math.log(T) / (l_hat - a_tilde_new) / delta0**2
                 for _ in range(int(n_tilde)):
                     recommender.update(arm, a_tilde_new)
                     
@@ -88,7 +88,7 @@ def simultaneous_bounded_injection_attack_real(n_arms, target_arm, rho, T, rewar
 
                 # Number of injection rounds n_tilde
                 a_tilde_new = min(a_tilde, mu_k - 3 * beta(arm_pulls[target_arm], sigma, n_arms, delta0) - 3 * sigma * delta0)
-                n_tilde = (mu_i - l_hat) * math.log(T) / l_hat - a_tilde_new / delta0**2
+                n_tilde = (mu_i - l_hat) * math.log(T) / (l_hat - a_tilde_new) / delta0**2
                 for _ in range(int(n_tilde)):
                     recommender.update(arm, a_tilde_new)
                     
