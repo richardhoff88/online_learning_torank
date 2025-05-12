@@ -33,8 +33,13 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, R, reward_matrix,
 
         if t > n_arms:
             if (t - n_arms) % R == 0:
+                for arm in attack_list:
+                    nk = arm_pulls[target_arm]
+                    beta_val = beta(nk, sigma, n_arms, delta0)
+                    mu_target = estimated_rewards[target_arm]
+                    
                 attack_list = []
-            elif arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)) and arm not in attack_list:
+            if arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)) and arm not in attack_list:
                 attack_list.append(arm)
 
             if arm != target_arm and arm_pulls[arm] >= threshold:
@@ -44,9 +49,6 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, R, reward_matrix,
                 mu_arm = estimated_rewards[arm]
                 rf = mu_arm - (mu_arm - mu_target + 2 * beta_val + 3 * sigma * delta0) * math.log(T / (n_tilde * delta0**2))
 
-                if bounded:
-                    rf = np.clip(rf, 0.0, 1.0)
-                attack_cost += abs(rf)
                 recommender.update(arm, rf)
                 attack_trials.append(t)
 
