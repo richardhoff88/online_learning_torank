@@ -15,7 +15,7 @@ def beta(N, sigma, n_arms, delta):
 def get_reward_from_matrix(reward_matrix, arm):
     return np.mean(reward_matrix[:, arm])
 
-def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, n_tilde, sigma = 1, delta0 = 0.05, bounded=False):
+def periodic_injection_attack_real(n_arms, target_arm, rho, T, R, reward_matrix, a_tilde, sigma = 1, delta0 = 0.05, bounded=False):
     recommender = UCBRecommender(n_arms, rho)
     target_pulls = 0
     attack_trials = []
@@ -23,14 +23,20 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, n_
     arm_pulls = np.zeros(n_arms)
     target_pull_ratios = []
     attack_cost = 0.0
+    attack_list = []
 
     for t in range(1, T + 1 + n_arms):
         arm = recommender.play()
         reward = get_reward_from_matrix(reward_matrix, arm)
         arm_pulls[arm] += 1
         estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
+
         if t > n_arms:
-            threshold = math.log(t / (delta0**2)) - n_tilde
+            if (t - n_arms) % R == 0:
+                attack_list = []
+            elif arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)) and arm not in attack_list:
+                attack_list.append(arm)
+
             if arm != target_arm and arm_pulls[arm] >= threshold:
                 nk = arm_pulls[target_arm]
                 beta_val = beta(nk, sigma, n_arms, delta0)
