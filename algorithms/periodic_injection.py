@@ -15,7 +15,7 @@ def beta(N, sigma, n_arms, delta):
 def get_reward_from_matrix(reward_matrix, arm):
     return np.mean(reward_matrix[:, arm])
 
-def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_tilde, f, R, sigma = 1, delta0 = 0.2, bounded=False):
+def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_tilde, f, R, delta0, sigma = 1):
     recommender = UCBRecommender(n_arms, rho)
     target_pulls = 0
     estimated_rewards = np.zeros(n_arms)
@@ -27,16 +27,13 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
     sleep_counter = 0
     for t in range(1, T + 1 + n_arms):
         arm = recommender.play()
-        # print(arm)
-        # print(target_arm)
         reward = get_reward_from_matrix(reward_matrix, arm)
         arm_pulls[arm] += 1
         estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
 
         if t > n_arms:
-            print(t)
+            # print(t)
             # print(f"Injection list: {len(injection_list)}")
-            # print(attack_list)
             if sleep_counter <= 0:
                 for arm_attack in attack_list:
                     mu_i = estimated_rewards[arm_attack]
@@ -55,27 +52,24 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
                     # print((((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2))
                     exponent = (((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2) * (arm_pulls[arm_attack] + f)
                     # print(f"The term inside the exp is {exponent}")
-                    r_new = (n_tilde/f) * math.exp(exponent) - t - f 
+                    r_new = min(R, (n_tilde/f) * math.exp(exponent) - t - f)
                     # print(f"R is : {r_new}")
-                    # r = max(1, r_new)
-                    # print(r)
-                    # print(target_arm)
-                    # print(arm)
-                    # print(n_tilde)
                     for _ in range(int(n_tilde)):
-                        injection_list.insert(0, (arm_attack, a_tilde_new))
+                        injection_list.insert(0, (arm_attack, a_tilde_new, r_new))
                     attack_list.remove(arm_attack)
-                
                 injections_to_do = injection_list[:min(f, len(injection_list))]
                 counter = 0
+                r = 0
                 for injection in injections_to_do:
                     counter += 1
+                    r = injection[2]
                     recommender.update(injection[0], injection[1])
+                    attack_cost += abs(injection[1] - estimated_rewards[injection[0]])
                 injection_list = injection_list[counter:]
-            
-                sleep_counter = R
-            print(f"Arm pulled {arm}")
-            print(arm==target_arm)
+
+                sleep_counter = r
+            # print(f"Arm pulled {arm}")
+            # print(arm==target_arm)
             if arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)) and arm not in attack_list:
                 attack_list.append(arm)
 
@@ -90,7 +84,7 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
 
     return target_pulls, target_pull_ratios, attack_cost
 
-def experiment_real_periodic_bounded_injection(T=int(1e4), n_arms=10, rho=1.0, a_tilde = 0.0, sigma=1.0, delta0=0.2, R = 40, f = 10, trials=10):
+def experiment_real_periodic_bounded_injection(T=int(1e4), n_arms=10, rho=1.0, a_tilde = 0.0, sigma=1.0, delta0=0.2, R = 30, f = 10, trials=10):
     all_ratios = []
 
     for _ in range(trials):
@@ -119,5 +113,64 @@ def experiment_real_periodic_bounded_injection(T=int(1e4), n_arms=10, rho=1.0, a
     plt.tight_layout()
     plt.show()
 
+def plot_attack_cost_real(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delta0=0.2, R = 30, f= 10, trials=5):
+    avg_costs = []
+    T_values = np.logspace(1, 4, num=10, dtype=int)
+    for T in T_values:
+        trial_costs = []
+        for _ in range(trials):
+            reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
+            selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
+            reduced_matrix = reduced_matrix[:, selected_movie_indices]
+            
+            movie_interactions = np.sum(reduced_matrix, axis=0)
+            target_arm = np.argmin(movie_interactions)
+
+            target_pulls, target_pull_ratios, attack_cost = periodic_injection_attack_real(
+            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0)
+            trial_costs.append(attack_cost)
+        
+        avg_costs.append(np.mean(trial_costs))
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(T_values, avg_costs, marker='o')
+    plt.xlabel("T (Rounds)")
+    plt.ylabel("Average Attack Cost")
+    plt.title(f"Attack Cost vs. T for Periodic Injection Attack (MovieLens Dataset)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+def plot_attack_cost_vs_delta0_real(n_arms=10, rho=1.0, T=int(1e4), a_tilde=0, sigma=1.0, R = 20, f= 10, trials=10):
+    avg_costs = []
+    delta0_values = np.linspace(0.1, 0.5, num=20) 
+
+    for delta0 in delta0_values:
+        trial_costs = []
+        for _ in range(trials):
+            reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
+            selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
+            reduced_matrix = reduced_matrix[:, selected_movie_indices]
+
+            movie_interactions = np.sum(reduced_matrix, axis=0)
+            target_arm = np.argmin(movie_interactions)
+
+            target_pulls, target_pull_ratios, attack_cost = periodic_injection_attack_real(
+            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0)
+
+            trial_costs.append(attack_cost)
+
+        avg_costs.append(np.mean(trial_costs))
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(delta0_values, avg_costs, marker='o')
+    plt.xlabel("δ₀ (Confidence Parameter)")
+    plt.ylabel("Average Attack Cost")
+    plt.title(f"Attack Cost vs. δ₀ for Periodic Injection Attack (MovieLens Dataset) with T = {T}")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
 if __name__ == "__main__":
     experiment_real_periodic_bounded_injection()
+    # plot_attack_cost_vs_delta0_real()
