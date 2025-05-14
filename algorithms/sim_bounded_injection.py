@@ -222,7 +222,7 @@ def plot_attack_cost_vs_delta0_real(n_arms=10, rho=1.0, T=int(1e4), a_tilde=0.0,
     plt.plot(delta0_values, avg_costs, marker='o')
     plt.xlabel("δ₀ (Confidence Parameter)")
     plt.ylabel("Average Attack Cost")
-    plt.title(f"Attack Cost vs. δ₀ for Simultaneous Bounded Injection Attack (MovieLens Dataset) with T = {T})")
+    plt.title(f"Attack Cost vs. δ₀ for Simultaneous Bounded Injection Attack (MovieLens Dataset) T = {T}")
     plt.grid(True)
     plt.tight_layout()
     plt.show()
