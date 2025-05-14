@@ -93,7 +93,7 @@ def simulate_adaptive_UCB_attack(n_arms, target_arm, rho, rounds, means, std_dev
                 desired_avg = mu_target - 2 * attack_beta - 3 * sigma
                 fake_reward = desired_avg * (pulls_arm + 1) - mu_arm * pulls_arm
                 # print(fake_reward)
-                recommender.update(real_arm, fake_reward)
+                recommender.update(real_arm, fake_reward, fake=True)
                 attack_trials_list.append(round_num)
                 attack_flag = False
     return arm_counts, attack_trials_list, target_pull_counter, non_target_pull_list

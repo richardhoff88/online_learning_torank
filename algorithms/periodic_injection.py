@@ -15,7 +15,7 @@ def beta(N, sigma, n_arms, delta):
 def get_reward_from_matrix(reward_matrix, arm):
     return np.mean(reward_matrix[:, arm])
 
-def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_tilde, R, f, sigma = 1, delta0 = 0.05, bounded=False):
+def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_tilde, f, R, sigma = 1, delta0 = 0.2, bounded=False):
     recommender = UCBRecommender(n_arms, rho)
     target_pulls = 0
     estimated_rewards = np.zeros(n_arms)
@@ -25,34 +25,57 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
     attack_list = []
     injection_list = []
     sleep_counter = 0
-
     for t in range(1, T + 1 + n_arms):
         arm = recommender.play()
+        # print(arm)
+        # print(target_arm)
         reward = get_reward_from_matrix(reward_matrix, arm)
         arm_pulls[arm] += 1
         estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
 
         if t > n_arms:
             print(t)
+            # print(f"Injection list: {len(injection_list)}")
+            # print(attack_list)
             if sleep_counter <= 0:
-                for arm in attack_list[:]:
-                    mu_i = estimated_rewards[arm]
+                for arm_attack in attack_list:
+                    mu_i = estimated_rewards[arm_attack]
                     mu_k = estimated_rewards[target_arm]
-                    l_hat = mu_k - 2 * beta(arm_pulls[target_arm], sigma, n_arms, delta0) - 3 * sigma * delta0
+                    beta_k = beta(arm_pulls[target_arm], sigma, n_arms, delta0)
+                    l_hat = mu_k - 2 * beta_k - 3 * sigma * delta0
 
                     # Number of injection rounds n_tilde
-                    a_tilde_new = min(a_tilde, mu_k - 3 * beta(arm_pulls[target_arm], sigma, n_arms, delta0) - 3 * sigma * delta0)
+                    a_tilde_new = min(a_tilde, mu_k - 3 * beta_k - 3 * sigma * delta0)
                     n_tilde = (mu_i - l_hat) * math.log(T) / (l_hat - a_tilde_new)/ delta0**2
+                    # print(f"N_tilde is {n_tilde}")
+                    # print(f"f is {f}")
+                    mu_tic = ((arm_pulls[arm_attack] * mu_i) + f*a_tilde) / (arm_pulls[arm_attack] + f)
+                    # print(f"mu_i(t_i(c)) is {mu_tic}")
+                    # print(f"N_i(t) is {arm_pulls[arm_attack]}")
+                    # print((((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2))
+                    exponent = (((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2) * (arm_pulls[arm_attack] + f)
+                    # print(f"The term inside the exp is {exponent}")
+                    r_new = (n_tilde/f) * math.exp(exponent) - t - f 
+                    # print(f"R is : {r_new}")
+                    # r = max(1, r_new)
+                    # print(r)
+                    # print(target_arm)
+                    # print(arm)
+                    # print(n_tilde)
                     for _ in range(int(n_tilde)):
-                        injection_list.append((arm, a_tilde_new))
-                    attack_list.remove(arm)
+                        injection_list.insert(0, (arm_attack, a_tilde_new))
+                    attack_list.remove(arm_attack)
                 
                 injections_to_do = injection_list[:min(f, len(injection_list))]
+                counter = 0
                 for injection in injections_to_do:
+                    counter += 1
                     recommender.update(injection[0], injection[1])
-                injection_list = injection_list[len(injections_to_do):]
+                injection_list = injection_list[counter:]
+            
                 sleep_counter = R
-
+            print(f"Arm pulled {arm}")
+            print(arm==target_arm)
             if arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)) and arm not in attack_list:
                 attack_list.append(arm)
 
@@ -61,15 +84,13 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
 
             target_pull_ratio = target_pulls / t
             target_pull_ratios.append(target_pull_ratio)
-
             if sleep_counter > 0:
                 sleep_counter -= 1
-
         recommender.update(arm, reward)
 
     return target_pulls, target_pull_ratios, attack_cost
 
-def experiment_real_periodic_bounded_injection(T=int(1e4), n_arms=10, rho=1.0, a_tilde = 0.0, sigma=1.0, delta0=0.05, R = 10, f = 100, trials=10):
+def experiment_real_periodic_bounded_injection(T=int(1e4), n_arms=10, rho=1.0, a_tilde = 0.0, sigma=1.0, delta0=0.2, R = 40, f = 10, trials=10):
     all_ratios = []
 
     for _ in range(trials):
