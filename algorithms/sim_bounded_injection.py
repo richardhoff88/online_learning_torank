@@ -115,52 +115,66 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
     target_pull_ratios = []
     attack_cost = 0.0
     attack_list = []
-    injection_list = []
-    sleep_counter = 0
+    injection_dict = {}
+    sleep_counter = {}
+    a_tildes = {}
+    injection_counter = 0
     for t in range(1, T + 1 + n_arms):
         arm = recommender.play()
-        #reward = get_reward_from_matrix(reward_matrix, arm)
-        reward = np.mean(reward_matrix[:, arm])
+        reward = get_reward_from_matrix(reward_matrix, arm)
         arm_pulls[arm] += 1
         estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
 
         if t > n_arms:
             # print(t)
             # print(f"Injection list: {len(injection_list)}")
-            if sleep_counter <= 0:
-                for arm_attack in attack_list:
-                    mu_i = estimated_rewards[arm_attack]
-                    mu_k = estimated_rewards[target_arm]
-                    beta_k = beta(arm_pulls[target_arm], sigma, n_arms, delta0)
-                    l_hat = mu_k - 2 * beta_k - 3 * sigma * delta0
+            for arm_attack in attack_list:
+                mu_i = estimated_rewards[arm_attack]
+                mu_k = estimated_rewards[target_arm]
+                beta_k = beta(arm_pulls[target_arm], sigma, n_arms, delta0)
+                l_hat = mu_k - 2 * beta_k - 3 * sigma * delta0
 
-                    # Number of injection rounds n_tilde
+                # Number of injection rounds n_tilde
+                if arm_attack not in a_tildes:
                     a_tilde_new = min(a_tilde, mu_k - 3 * beta_k - 3 * sigma * delta0)
-                    n_tilde = (mu_i - l_hat) * math.log(T) / (l_hat - a_tilde_new)/ delta0**2
-                    # print(f"N_tilde is {n_tilde}")
-                    # print(f"f is {f}")
-                    mu_tic = ((arm_pulls[arm_attack] * mu_i) + f*a_tilde) / (arm_pulls[arm_attack] + f)
-                    # print(f"mu_i(t_i(c)) is {mu_tic}")
-                    # print(f"N_i(t) is {arm_pulls[arm_attack]}")
-                    # print((((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2))
-                    exponent = (((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2) * (arm_pulls[arm_attack] + f)
-                    # print(f"The term inside the exp is {exponent}")
-                    r_new = min(R, (n_tilde/f) * math.exp(exponent) - t - f)
-                    # print(f"R is : {r_new}")
-                    for _ in range(int(n_tilde)):
-                        injection_list.insert(0, (arm_attack, a_tilde_new, r_new))
-                    attack_list.remove(arm_attack)
-                injections_to_do = injection_list[:min(f, len(injection_list))]
-                counter = 0
-                r = 0
-                for injection in injections_to_do:
-                    counter += 1
-                    r = injection[2]
-                    recommender.update(injection[0], injection[1])
-                    attack_cost += abs(injection[1] - estimated_rewards[injection[0]])
-                injection_list = injection_list[counter:]
+                    a_tildes[arm_attack] = a_tilde_new
+                else:
+                    a_tilde_new = a_tildes[arm_attack]
 
-                sleep_counter = r
+                n_tilde = (mu_i - l_hat) * math.log(T) / (l_hat - a_tilde_new)/ delta0**2
+                mu_tic = ((arm_pulls[arm_attack] * mu_i) + f*a_tilde) / (arm_pulls[arm_attack] + f)
+                exponent = (((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2) * (arm_pulls[arm_attack] + f)
+                if exponent < 40:
+                    r_new = min(R, (n_tilde/f) * math.exp(exponent) - t - f) # prevents overflow errors
+                else:
+                    r_new = R
+
+                if arm_attack not in injection_dict:
+                    injection_dict[arm_attack] = []
+
+                injection_list = injection_dict[arm_attack]
+                for _ in range(int(n_tilde)):
+                    injection_list.append((arm_attack, a_tilde_new, r_new))
+                attack_list.remove(arm_attack)
+            
+            for key in injection_dict:
+                if key not in sleep_counter:
+                    sleep_counter[key] = 0
+                if sleep_counter[key] <= 0:
+                    injection_list = injection_dict[key]
+                    injections_to_do = injection_list[:min(f, len(injection_list))]
+                    counter = 0
+                    r = 0
+                    # print(len(injections_to_do))
+                    for injection in injections_to_do:
+                        counter += 1
+                        r = injection[2]
+                        attack_cost += abs(injection[1] - estimated_rewards[injection[0]])
+                        recommender.update(injection[0], injection[1])
+                    injection_dict[key] = injection_list[counter:]
+                    sleep_counter[key] = r
+                    injection_counter += 1
+                    
             # print(f"Arm pulled {arm}")
             # print(arm==target_arm)
             if arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)) and arm not in attack_list:
@@ -171,8 +185,9 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
 
             target_pull_ratio = target_pulls / t
             target_pull_ratios.append(target_pull_ratio)
-            if sleep_counter > 0:
-                sleep_counter -= 1
+            for key in sleep_counter:
+                if sleep_counter[key] > 0:
+                    sleep_counter[key] -= 1
         recommender.update(arm, reward)
 
     return target_pulls, target_pull_ratios, attack_cost
