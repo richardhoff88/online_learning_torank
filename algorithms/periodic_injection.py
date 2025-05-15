@@ -135,8 +135,8 @@ def plot_attack_cost_real(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delta0=0.2
     plt.figure(figsize=(8, 5))
     plt.plot(T_values, avg_costs, marker='o')
     plt.xlabel("T (Rounds)")
-    plt.ylabel("Average Attack Cost")
-    plt.title(f"Attack Cost vs. T for Periodic Bounded Injection Attack (MovieLens Dataset)")
+    plt.ylabel("Average Total Attack Cost")
+    plt.title(f"Total Attack Cost vs. T for Periodic Bounded Injection Attack (MovieLens Dataset)")
     plt.grid(True)
     plt.tight_layout()
     plt.show()
@@ -165,12 +165,17 @@ def plot_attack_cost_vs_delta0_real(n_arms=10, rho=1.0, T=int(1e4), a_tilde=0, s
     plt.figure(figsize=(8, 5))
     plt.plot(delta0_values, avg_costs, marker='o')
     plt.xlabel("δ₀ (Confidence Parameter)")
-    plt.ylabel("Average Attack Cost")
-    plt.title(f"Attack Cost vs. δ₀ for Periodic Bounded Injection Attack (MovieLens Dataset) with T = {T}")
+    plt.ylabel("Average Total Attack Cost")
+    plt.title(f"Total Attack Cost vs. δ₀ for Periodic Bounded Injection Attack (MovieLens Dataset) with T = {T}")
     plt.grid(True)
     plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
-    experiment_real_periodic_bounded_injection()
-    # plot_attack_cost_vs_delta0_real()
+    # experiment_real_periodic_bounded_injection()
+    plot_attack_cost_vs_delta0_real()
+
+
+# overlap attack cost plots and target pull plots
+# show standard deviation on both sides
+# increase font size of labels
