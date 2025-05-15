@@ -350,6 +350,96 @@ def experiment_comparison_injection_real(T=int(1e4), n_arms=10, rho=1.0, sigma=1
     plt.tight_layout()
     plt.show()
 
+def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delta0=0.2, R=30, f=10, trials=5):
+    avg_costs_sbi = []
+    avg_costs_pbi = []
+    std_costs_sbi = []
+    std_costs_pbi = []
+    T_values = np.logspace(1, 4, num=10, dtype=int)
+
+    for T in T_values:
+        trial_costs_sbi = []
+        trial_costs_pbi = []
+
+        for _ in range(trials):
+            reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
+            selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
+            reduced_matrix = reduced_matrix[:, selected_movie_indices]
+
+            movie_interactions = np.sum(reduced_matrix, axis=0)
+            target_arm = np.argmin(movie_interactions)
+
+            _, _, _, attack_cost_sbi = simultaneous_bounded_injection_attack_real(
+                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, sigma=sigma, delta0=delta0)
+            trial_costs_sbi.append(attack_cost_sbi)
+
+            _, _, attack_cost_pbi = periodic_injection_attack_real(
+                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0)
+            trial_costs_pbi.append(attack_cost_pbi)
+
+        avg_costs_sbi.append(np.mean(trial_costs_sbi))
+        avg_costs_pbi.append(np.mean(trial_costs_pbi))
+        std_costs_sbi.append(np.std(trial_costs_sbi))
+        std_costs_pbi.append(np.std(trial_costs_pbi))
+
+    plt.figure(figsize=(12, 8))
+    plt.errorbar(T_values, avg_costs_sbi, yerr=std_costs_sbi, marker='o', label='Simultaneous Bounded Injection', linestyle='dotted', color='blue', capsize=5)
+    plt.errorbar(T_values, avg_costs_pbi, yerr=std_costs_pbi, marker='x', label='Periodic Bounded Injection', linestyle='--', color='red', capsize=5)
+    plt.tick_params(labelsize=16)
+    plt.xlabel("Rounds", fontsize=18)
+    plt.ylabel("Average Total Attack Cost", fontsize=18)
+    plt.title("Comparison of Attack Costs over T", fontsize=20)
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e4), a_tilde=0.0, sigma=1.0, R=20, f=10, trials=10):
+    avg_costs_sbi = []
+    avg_costs_pbi = []
+    std_costs_sbi = []
+    std_costs_pbi = []
+    delta0_values = np.linspace(0.1, 0.5, num=20)
+
+    for delta0 in delta0_values:
+        trial_costs_sbi = []
+        trial_costs_pbi = []
+
+        for _ in range(trials):
+            reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
+            selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
+            reduced_matrix = reduced_matrix[:, selected_movie_indices]
+
+            movie_interactions = np.sum(reduced_matrix, axis=0)
+            target_arm = np.argmin(movie_interactions)
+
+            _, _, _, attack_cost_sbi = simultaneous_bounded_injection_attack_real(
+                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, sigma=sigma, delta0=delta0)
+            trial_costs_sbi.append(attack_cost_sbi)
+
+            _, _, attack_cost_pbi = periodic_injection_attack_real(
+                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0)
+            trial_costs_pbi.append(attack_cost_pbi)
+
+        avg_costs_sbi.append(np.mean(trial_costs_sbi))
+        avg_costs_pbi.append(np.mean(trial_costs_pbi))
+        std_costs_sbi.append(np.std(trial_costs_sbi))
+        std_costs_pbi.append(np.std(trial_costs_pbi))
+
+    plt.figure(figsize=(12, 8))
+    plt.errorbar(delta0_values, avg_costs_sbi, yerr=std_costs_sbi, marker='o', label='Simultaneous Bounded Injection', linestyle='dotted', color='blue', capsize=5)
+    plt.errorbar(delta0_values, avg_costs_pbi, yerr=std_costs_pbi, marker='x', label='Periodic Bounded Injection', linestyle='--', color='red', capsize=5)
+    plt.tick_params(labelsize=16)
+    plt.xlabel("δ₀ (Confidence Parameter)", fontsize=18)
+    plt.ylabel("Average Total Attack Cost", fontsize=18)
+    plt.title("Comparison of Attack Costs over δ₀", fontsize=20)
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
 if __name__ == "__main__":
     # experiment_real_simultaneous_bounded_injection(a_tilde=0.0)
     # plot_attack_cost_real()
