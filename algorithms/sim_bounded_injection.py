@@ -330,7 +330,7 @@ def experiment_comparison_injection_real(T=int(1e4), n_arms=10, rho=1.0, sigma=1
         all_ratios_sbi.append(target_pull_ratios_sbi)
 
         target_pulls_pbi, target_pull_ratios_pbi, _ = periodic_injection_attack_real(
-            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, f=10, R=30, sigma=sigma, delta0=delta0
+            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, f=3, R=1000, sigma=sigma, delta0=delta0
         )
         all_ratios_pbi.append(target_pull_ratios_pbi)
 
@@ -445,5 +445,6 @@ if __name__ == "__main__":
     # plot_attack_cost_real()
     # plot_attack_cost_vs_delta0_real()
 
-    experiment_comparison_injection_real()
+    # experiment_comparison_injection_real()
+    plot_attack_cost_vs_delta0_comparison()
 
