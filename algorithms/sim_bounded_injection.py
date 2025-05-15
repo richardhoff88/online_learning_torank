@@ -350,7 +350,7 @@ def experiment_comparison_injection_real(T=int(1e4), n_arms=10, rho=1.0, sigma=1
     plt.tight_layout()
     plt.show()
 
-def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delta0=0.2, R=30, f=10, trials=5):
+def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delta0=0.2, R=1000, f=3, trials=5):
     avg_costs_sbi = []
     avg_costs_pbi = []
     std_costs_sbi = []
@@ -395,7 +395,7 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     plt.show()
 
 
-def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e4), a_tilde=0.0, sigma=1.0, R=20, f=10, trials=10):
+def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e4), a_tilde=0.0, sigma=1.0, R=1000, f=3, trials=10):
     avg_costs_sbi = []
     avg_costs_pbi = []
     std_costs_sbi = []
