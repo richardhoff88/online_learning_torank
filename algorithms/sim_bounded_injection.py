@@ -298,7 +298,7 @@ def plot_attack_cost_vs_delta0_real(n_arms=10, rho=1.0, T=int(1e4), a_tilde=0.0,
     plt.show()
 
 
-def experiment_comparison_injection_real(T=int(1e4), n_arms=10, rho=1.0, sigma=1.0, delta0=0.05, trials=10):
+def experiment_comparison_injection_real(T=int(1e4), n_arms=10, rho=1.0, sigma=1.0, delta0=0.2, trials=10):
     all_ratios_sbi = []
     all_ratios_pbi = []
 
@@ -323,8 +323,8 @@ def experiment_comparison_injection_real(T=int(1e4), n_arms=10, rho=1.0, sigma=1
     avg_ratios_pbi = np.mean(all_ratios_pbi, axis=0)
     
     plt.figure(figsize=(12, 8))
-    plt.plot(range(1, T + 1), avg_ratios_sbi, label="Simultaneous Bounded Injection", labelsize=14, color='blue', linestyle='dotted')
-    plt.plot(range(1, T + 1), avg_ratios_pbi, label="Periodic Bounded Injection", labelsize=14, color='red', linestyle='--')
+    plt.plot(range(1, T + 1), avg_ratios_sbi, label="Simultaneous Bounded Injection", color='blue', linestyle='dotted')
+    plt.plot(range(1, T + 1), avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='--')
     plt.tick_params(labelsize=16)
     plt.tick_params(labelsize=16)  
     plt.xlabel("Rounds", fontsize=18)
