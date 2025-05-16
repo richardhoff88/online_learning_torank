@@ -354,7 +354,9 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     avg_costs_pbi = []
     std_costs_sbi = []
     std_costs_pbi = []
-    T_values = np.logspace(1, 7, num=10, dtype=int)
+    base_T_values = np.logspace(1, 7, num=10, dtype=int)
+    custom_T_values = np.array([int(0.4e7), int(0.6e7), int(0.8e7)])
+    T_values = np.unique(np.concatenate((base_T_values, custom_T_values)))
 
     for T in T_values:
         trial_costs_sbi = []
