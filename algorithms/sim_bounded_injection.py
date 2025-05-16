@@ -341,7 +341,7 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
     plt.plot(range(1, T + 1), avg_ratios_sbi, label="Simultaneous Bounded Injection", color='blue', linestyle='dotted', marker='o', markersize=4)
     plt.plot(range(1, T + 1), avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='--', marker='x', markersize=1)
     plt.tick_params(labelsize=27)
-    plt.xlabel("T", fontsize=30)
+    plt.xlabel("Rounds", fontsize=30)
     plt.ylabel("Target Arm Selection Ratio", fontsize=30)
     plt.legend(fontsize=28)
     plt.grid(True)
@@ -444,7 +444,7 @@ if __name__ == "__main__":
     # plot_attack_cost_real()
     # plot_attack_cost_vs_delta0_real()
 
-    #experiment_comparison_injection_real()
+    experiment_comparison_injection_real()
     #plot_attack_cost_vs_delta0_comparison()
-    plot_attack_cost_comparison()
+    #plot_attack_cost_comparison()
 
