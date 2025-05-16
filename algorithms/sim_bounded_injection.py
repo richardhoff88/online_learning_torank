@@ -227,9 +227,7 @@ def experiment_real_simultaneous_bounded_injection(T=int(1e4), n_arms=10, rho=1.
     for _ in range(trials):
         reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
         selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
-        # Slice the matrix to keep only n_arms
         reduced_matrix = reduced_matrix[:, selected_movie_indices]
-        # Use smallest reward arm as target
         movie_interactions = np.sum(reduced_matrix, axis=0)
         least_interacted_movie = np.argmin(movie_interactions)
         target_arm = least_interacted_movie
@@ -237,7 +235,6 @@ def experiment_real_simultaneous_bounded_injection(T=int(1e4), n_arms=10, rho=1.
         target_pulls, attack_trials, target_pull_ratios, attack_cost = simultaneous_bounded_injection_attack_real(
             n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, sigma=sigma, delta0=delta0,
         )
-        # print(attack_cost)
         all_ratios.append(target_pull_ratios)
 
     avg_ratios = np.mean(all_ratios, axis=0)
@@ -446,7 +443,7 @@ if __name__ == "__main__":
     # plot_attack_cost_real()
     # plot_attack_cost_vs_delta0_real()
 
-    experiment_comparison_injection_real()
+    #experiment_comparison_injection_real()
     #plot_attack_cost_vs_delta0_comparison()
-    #plot_attack_cost_comparison()
+    plot_attack_cost_comparison()
 
