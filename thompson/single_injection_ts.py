@@ -16,13 +16,25 @@ class attcker:
         pass
 
     def condition(self, k: int) -> bool:
+        """
+        Here we need just one injection for each arm.
+        """
         return self.N[k] == self.attack_round
     
 
+    def fake_reward(self, k: int) -> float:
+        # TODO: calculate it
+        pass
+
+    def select_arm(self) -> int:
+        # TODO: return the injected arm
+        pass
+
     def get_reward(self, k: int) -> float:
+        self.N[k] += 1 # update the number of times arm k has been selected
         if self.condition(k) is True:
-            return -0x80000000 # TODO: calculate it, fake reward
+            return self.fake_reward(k)
         else:
-            return 0x7fffffff  # TODO: calculate it, real reward
+            return 0x7fffffff  # TODO: return the real reward
 
     
