@@ -31,22 +31,14 @@ class Thompson:
         self.empirical_means[k] = ((self.n[k] - 1) * self.empirical_means[k] + reward) / self.n[k]
 
     def select_arm(self) -> int:
-        if attacked is True:
-            return attacker.select_arm()
-        else:
-            sampled_means = [np.random.normal(loc=self.empirical_means[k], scale=1/np.sqrt(self.n[k])) for k in range(self.K)]
-            return np.argmax(sampled_means)
+        return attacker.select_arm()
     
     def run(self) -> List[float]:
-        select_cnt = [0] * self.K
         for t in range(1, self.K+1):
             k = t - 1
             reward = self.get_reward(k)
             self.update(k, reward)
-            select_cnt[k] += 1
         for t in range(self.K+1, self.T+1):
-            k = self.select_arm()
-            reward = self.get_reward(k)
-            self.update(k, reward)
-            select_cnt[k] += 1
-        return select_cnt
+            k, r = attacker.feedback()
+            self.update(k, r)
+        return self.n
