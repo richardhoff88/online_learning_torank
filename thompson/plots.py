@@ -7,7 +7,7 @@ import math
 sys.path.append(os.path.abspath(".."))
 from attack import get_real_reward
 
-def plot_attack_cost_vs_delta0(n_arms=10, rho=1.0, sigma=1.0, trials=50):
+def plot_attack_cost_vs_delta0(n_arms=10, rho=1.0, sigma=1.0, trials=10):
     delta0_values = np.linspace(0.1, 0.5, num=20)
     avg_costs_single = []
     avg_costs_sequential = []
@@ -22,27 +22,23 @@ def plot_attack_cost_vs_delta0(n_arms=10, rho=1.0, sigma=1.0, trials=50):
         trial_costs_periodic = []
 
         for _ in range(trials):
-            # fixed means instead of random
-            means = np.linspace(0, 1, n_arms)
+            means = np.random.rand(n_arms)
             std_devs = np.full(n_arms, sigma)
             target_arm = np.argmin(means)
             
             from thompson import Thompson_single
             thompson = Thompson_single(n_arms, T=10000, sigma=sigma)
-            ratios = thompson.run()
-            attack_cost = calculate_attack_cost(ratios[-1], n_arms, delta0, sigma, 10000)
+            attack_cost = thompson.run()
             trial_costs_single.append(attack_cost)
 
             from thompson import Thompson_sequential
             thompson = Thompson_sequential(n_arms, T=10000, sigma=sigma)
-            ratios = thompson.run()
-            attack_cost = calculate_attack_cost(ratios[-1], n_arms, delta0, sigma, 10000)
+            attack_cost = thompson.run()
             trial_costs_sequential.append(attack_cost)
 
             from thompson import Thompson_periodic
             thompson = Thompson_periodic(n_arms, T=10000, sigma=sigma)
-            ratios = thompson.run()
-            attack_cost = calculate_attack_cost(ratios[-1], n_arms, delta0, sigma, 10000)
+            attack_cost = thompson.run()
             trial_costs_periodic.append(attack_cost)
 
         avg_costs_single.append(np.median(trial_costs_single))
@@ -94,25 +90,19 @@ def plot_attack_cost_vs_T(n_arms=10, rho=1.0, sigma=1.0, delta0=1.0, trials=10):
         trial_costs_periodic = []
 
         for _ in range(trials):
-            means = np.random.rand(n_arms)
-            std_devs = np.full(n_arms, sigma)
-            target_arm = np.argmin(means)
-
             from thompson import Thompson_single
             thompson = Thompson_single(n_arms, T, sigma)
-            ratios = thompson.run()
-            attack_cost = calculate_attack_cost(ratios[-1], n_arms, delta0, sigma, T)
+            attack_cost = thompson.run()
             trial_costs_single.append(attack_cost)
+
             from thompson import Thompson_sequential
             thompson = Thompson_sequential(n_arms, T, sigma)
-            ratios = thompson.run()
-            attack_cost = calculate_attack_cost(ratios[-1], n_arms, delta0, sigma, T)
+            attack_cost = thompson.run()
             trial_costs_sequential.append(attack_cost)
 
             from thompson import Thompson_periodic
             thompson = Thompson_periodic(n_arms, T, sigma)
-            ratios = thompson.run()
-            attack_cost = calculate_attack_cost(ratios[-1], n_arms, delta0, sigma, T)
+            attack_cost = thompson.run()
             trial_costs_periodic.append(attack_cost)
 
         avg_costs_single.append(np.mean(trial_costs_single))
@@ -256,22 +246,9 @@ def beta(N, sigma, n_arms, delta):
     log_argument = max((math.pi**2 * N**2 * n_arms) / (3 * delta), 1)
     return math.sqrt((2 * sigma**2 / N) * math.log(log_argument))
 
-def calculate_attack_cost(target_arm_ratio, n_arms, delta0, sigma, T):
-    target_pulls = int(target_arm_ratio * T)
-    means = np.linspace(0, 1, n_arms)
-    mu_k = means[-1]
-    
-    attack_cost = 0
-    for arm in range(n_arms - 1):  
-        mu_i = means[arm]
-        if mu_i > mu_k: 
-            l_hat = mu_k - 2 * beta(target_pulls, sigma, n_arms, delta0)
-            a_tilde = mu_k - 3 * beta(target_pulls, sigma, n_arms, delta0) - 3 * sigma * delta0
-            n_tilde = (mu_i - l_hat) * math.log(T) / (l_hat - a_tilde) / delta0**2
-            attack_cost += abs(a_tilde - mu_i) * int(n_tilde)
-    return attack_cost
+
 
 if __name__ == "__main__":
     plot_attack_cost_vs_delta0()
-    plot_attack_cost_vs_T()
+    #plot_attack_cost_vs_T()
     # plot_target_arm_ratio()
