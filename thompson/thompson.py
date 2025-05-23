@@ -141,23 +141,6 @@ if __name__ == "__main__":
     
     # plt.errorbar(x_axis, mean_costs_single, yerr=std_costs_single,
     #              marker='^', color='blue', label='Single Injection', capsize=5)
-    # plt.errorbar(x_axis, mean_costs_sequential, yerr=std_costs_sequential,
-    #              marker='o', color='green', label='Sequential Injection', capsize=5)
-    # plt.errorbar(x_axis, mean_costs_periodic, yerr=std_costs_periodic,
-    #              marker='s', color='red', label='Periodic Injection', capsize=5)
-    
-    # plt.plot(x_axis, mean_costs_single, color='blue', linestyle='-')
-    # plt.plot(x_axis, mean_costs_sequential, color='green', linestyle='--')
-    # plt.plot(x_axis, mean_costs_periodic, color='red', linestyle=':')
-    
-    # plt.xlabel("Delta0", fontsize=14)
-    # plt.ylabel("Attack Cost", fontsize=14)
-    # plt.title("Thompson Sampling Attack Cost vs Delta0", fontsize=16)
-    # plt.legend()
-    # plt.grid(True)
-    # plt.tight_layout()
-    # plt.savefig("thompson-cost-delta0.png")
-
     x_axis = [10000, 20000, 50000, 100000, 200000, 500000, 1000000]
     len_x = len(x_axis)
 
@@ -192,23 +175,20 @@ if __name__ == "__main__":
     mean_cost_periodic = [np.mean(costs) for costs in cost_periodic_trials]
     std_cost_periodic = [np.std(costs) for costs in cost_periodic_trials]
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 8))
 
     plt.errorbar(x_axis, mean_cost_single, yerr=std_cost_single,
-                 marker='^', color='blue', label='Single Injection', capsize=5)
+                 marker='o', label='Single Injection', linestyle='dotted', color='blue', capsize=5)
     plt.errorbar(x_axis, mean_cost_sequential, yerr=std_cost_sequential,
-                 marker='o', color='green', label='Sequential Injection', capsize=5)
+                 marker='x', label='Sequential Injection', linestyle='--', color='green', capsize=5)
     plt.errorbar(x_axis, mean_cost_periodic, yerr=std_cost_periodic,
-                 marker='s', color='red', label='Periodic Injection', capsize=5)
+                 marker='s', label='Periodic Injection', linestyle='-', color='red', capsize=5)
 
-    plt.plot(x_axis, mean_cost_single, color='blue', linestyle='-')
-    plt.plot(x_axis, mean_cost_sequential, color='green', linestyle='--')
-    plt.plot(x_axis, mean_cost_periodic, color='red', linestyle=':')
-
-    plt.xlabel("T", fontsize=14)
-    plt.ylabel("Attack Cost", fontsize=14)
-    plt.title("Thompson Sampling Attack Cost vs T", fontsize=16)
-    plt.legend()
+    plt.tick_params(labelsize=27)
+    plt.xlabel("T", fontsize=30)
+    plt.ylabel("Average Total Attack Cost", fontsize=30)
+    plt.legend(fontsize=28)
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig("thompson-cost-T.png")
+    plt.savefig('thompson_attack_costs.png')
+    plt.show()
