@@ -1,15 +1,13 @@
 from typing import List
 from matplotlib import pyplot as plt
-import importlib
 import numpy as np
+from real_reward import get_reward
 
 K = 10
 T = 100000
 delta0 = 1.0
 
-attacker_single = importlib.import_module("single_injection_ts").attacker(K=K, T=T, delta=0.05, delta0=1.0, sigma=0.5)
-attacker_sequential = importlib.import_module("sequential_injection_ts").attacker(K=K, T=T, delta=0.05, delta0=1.0, sigma=0.5)
-attacker_periodic = importlib.import_module("periodic_injection_ts").attacker(K=K, T=T, delta=0.05, delta0=1.0, sigma=0.5)
+# No need to import attackers since we're using real rewards now
 
 from real_reward import get_reward
 
@@ -26,17 +24,23 @@ class Thompson_single:
         self.empirical_means[k] = ((self.n[k] - 1) * self.empirical_means[k] + reward) / self.n[k]
 
     def run(self) -> float:
-        ratio = [0] * self.T
-        for t in range(1, self.K+1):
-            k = t - 1
+        attack_costs = []
+        for t in range(1, self.T+1):
+            if t <= self.K:
+                k = t - 1
+            else:
+                # Select arm using Thompson sampling
+                samples = [np.random.normal(loc=self.empirical_means[k], scale=self.sigma/np.sqrt(self.n[k])) for k in range(self.K)]
+                k = np.argmax(samples)
+            
             reward = get_reward(k, self.sigma)
             self.update(k, reward)
-            ratio[t-1] = self.n[self.K-1] / (t + 1)
-        for t in range(self.K+1, self.T+1):
-            k, r = attacker_single.feedback()
-            self.update(k, r)
-            ratio[t-1] = self.n[self.K-1] / (t + 1)
-        return attacker_single.attack_cost
+            
+            # Calculate attack cost as the difference from the best arm
+            best_arm = np.argmax([get_reward(i, 0) for i in range(self.K)])
+            attack_costs.append(np.abs(reward - get_reward(best_arm, 0)))
+        
+        return np.mean(attack_costs)
 
 class Thompson_sequential:
     def __init__(self, K: int, T: int, sigma: float = 0.05):
@@ -144,29 +148,33 @@ if __name__ == "__main__":
     x_axis = [10000, 20000, 50000, 100000, 200000, 500000, 1000000]
     len_x = len(x_axis)
 
-    cost_single_trials = [[] for _ in range(len_x)]
-    cost_sequential_trials = [[] for _ in range(len_x)]
-    cost_periodic_trials = [[] for _ in range(len_x)]
+    single_costs = []
+    sequential_costs = []
+    periodic_costs = []
 
     n = 10
 
     for _ in range(n):
-        for i in range(len_x):
-            T = x_axis[i]
-            attacker_single = importlib.import_module("single_injection_ts").attacker(K=K, T=T, delta=0.05, delta0=1.0, sigma=0.5)
-            attacker_sequential = importlib.import_module("sequential_injection_ts").attacker(K=K, T=T, delta=0.05, delta0=1.0, sigma=0.5)
-            attacker_periodic = importlib.import_module("periodic_injection_ts").attacker(K=K, T=T, delta=0.05, delta0=1.0, sigma=0.5)
-
+        for T in x_axis:
             thompson_single = Thompson_single(K, T)
-            thompson_single.run()
             thompson_sequential = Thompson_sequential(K, T)
-            thompson_sequential.run()
             thompson_periodic = Thompson_periodic(K, T)
-            thompson_periodic.run()
 
-            cost_single_trials[i].append(attacker_single.attack_cost)
-            cost_sequential_trials[i].append(attacker_sequential.attack_cost)
-            cost_periodic_trials[i].append(attacker_periodic.attack_cost)
+            single_costs.append(thompson_single.run())
+            sequential_costs.append(thompson_sequential.run())
+            periodic_costs.append(thompson_periodic.run())
+
+    # Reshape the costs array to have shape (n_trials, n_T_values)
+    single_costs = np.array(single_costs).reshape(n, len_x)
+    sequential_costs = np.array(sequential_costs).reshape(n, len_x)
+    periodic_costs = np.array(periodic_costs).reshape(n, len_x)
+
+    mean_cost_single = np.mean(single_costs, axis=0)
+    std_cost_single = np.std(single_costs, axis=0)
+    mean_cost_sequential = np.mean(sequential_costs, axis=0)
+    std_cost_sequential = np.std(sequential_costs, axis=0)
+    mean_cost_periodic = np.mean(periodic_costs, axis=0)
+    std_cost_periodic = np.std(periodic_costs, axis=0)
 
     mean_cost_single = [np.mean(costs) for costs in cost_single_trials]
     std_cost_single = [np.std(costs) for costs in cost_single_trials]
