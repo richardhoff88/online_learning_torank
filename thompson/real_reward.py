@@ -1,10 +1,40 @@
 import numpy as np
 
-means = [0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]
+def load_movielens_dataset():
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+    data_file = os.path.join(project_root, 'dataset.txt')
+    data = np.loadtxt(data_file)
+    return data
 
+def calculate_movie_means(data):
+    min_rating = data.min()
+    max_rating = data.max()
+    normalized_data = (data - min_rating) / (max_rating - min_rating)
+    
+    movie_means = np.nanmean(normalized_data, axis=0)
+    return movie_means
 
-def get_reward(i: int, sigma: float) -> float:
-    return np.random.normal(loc=means[i], scale=sigma)
+class MovieLensReward:
+    def __init__(self, K=10):
+        data = load_movielens_dataset()
+        means = calculate_movie_means(data)
+        
+        top_k_indices = np.argsort(means)[-K:][::-1]
+        self.means = means[top_k_indices]
+        
+    def get_reward(self, movie_id: int, sigma: float) -> float:
+        mean_rating = self.means[movie_id]
+        return np.random.normal(loc=mean_rating, scale=sigma)
+        
+    def get_real_mean(self, movie_id: int) -> float:
+        return self.means[movie_id]
 
-def real_mean(i: int) -> float:
-    return means[i]
+reward_generator = MovieLensReward()
+
+def get_reward(movie_id: int, sigma: float) -> float:
+    return reward_generator.get_reward(movie_id, sigma)
+
+def real_mean(movie_id: int) -> float:
+    return reward_generator.get_real_mean(movie_id)
