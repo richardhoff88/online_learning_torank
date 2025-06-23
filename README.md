@@ -14,7 +14,7 @@ We develop a method to attack bandits via fake data injection.
 ---
 
 ## Project Structure
-
+```
 online_learning_torank/
 ├── algorithms/ # Bandit and ranking algorithms
 ├── dataset/ # Dataset files and preprocessing
@@ -27,7 +27,7 @@ online_learning_torank/
 ├── params_experiment.py # Experiment configuration
 ├── figures/ # Plots and visualizations
 └── dataset.txt # Dataset details
-
+```
 
 ## Running Experiments
 ```bash
@@ -36,4 +36,4 @@ python attack_real.py
 
 ## Research
 
-[Link to research paper](https://arxiv.org/abs/2505.21938), Practical Adversarial Attacks on Stochastic Bandits via Fake Data Injection
+[arXiv 05.2025](https://arxiv.org/abs/2505.21938): Practical Adversarial Attacks on Stochastic Bandits via Fake Data Injection
