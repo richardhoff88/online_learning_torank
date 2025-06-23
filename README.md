@@ -1,4 +1,4 @@
-# Online Learning ToRank: Robustness and Adversarial Attacks
+# Online Learning to Rank: Robustness and Adversarial Attacks
 
 ## Overview
 
