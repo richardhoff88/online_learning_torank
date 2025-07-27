@@ -141,7 +141,7 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
                 else:
                     a_tilde_new = a_tildes[arm_attack]
 
-                n_tilde = (mu_i - l_hat) * math.log(T) / (l_hat - a_tilde_new)/ delta0**2
+                n_tilde = math.ceil((mu_i - l_hat) / (l_hat - a_tilde_new) * math.ceil(math.log(T) / delta0**2))
                 mu_tic = ((arm_pulls[arm_attack] * mu_i) + f*a_tilde) / (arm_pulls[arm_attack] + f)
                 exponent = (((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2) * (arm_pulls[arm_attack] + f)
                 if exponent < 40:
@@ -177,7 +177,7 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
                     
             # print(f"Arm pulled {arm}")
             # print(arm==target_arm)
-            if arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)) and arm not in attack_list:
+            if arm != target_arm and arm_pulls[arm] >= math.ceil(math.log(T) / (delta0**2)) and arm not in attack_list:
                 attack_list.append(arm)
 
             if arm == target_arm:
@@ -444,6 +444,7 @@ if __name__ == "__main__":
     # plot_attack_cost_vs_delta0_real()
 
     #experiment_comparison_injection_real()
-    #plot_attack_cost_vs_delta0_comparison()
-    plot_attack_cost_comparison()
+    plot_attack_cost_vs_delta0_comparison()
+    #plot_attack_cost_comparison()
+
 
