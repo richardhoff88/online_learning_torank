@@ -141,7 +141,7 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
                 else:
                     a_tilde_new = a_tildes[arm_attack]
 
-                n_tilde = math.ceil((mu_i - l_hat) / (l_hat - a_tilde_new) * math.ceil(math.log(T) / delta0**2))
+                n_tilde = math.ceil((mu_i - l_hat) / (l_hat - a_tilde_new) * math.ceil(math.log(T) / delta0**2))             
                 mu_tic = ((arm_pulls[arm_attack] * mu_i) + f*a_tilde) / (arm_pulls[arm_attack] + f)
                 exponent = (((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2) * (arm_pulls[arm_attack] + f)
                 if exponent < 40:
@@ -178,6 +178,10 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
             # print(f"Arm pulled {arm}")
             # print(arm==target_arm)
             if arm != target_arm and arm_pulls[arm] >= math.ceil(math.log(T) / (delta0**2)) and arm not in attack_list:
+                print(arm_pulls[arm])
+                print(math.ceil(math.log(T)/ (delta0**2)))
+                print(math.ceil(math.log(T / (delta0**2))))
+                print("-" * 20)
                 attack_list.append(arm)
 
             if arm == target_arm:
@@ -188,6 +192,49 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
             for key in sleep_counter:
                 if sleep_counter[key] > 0:
                     sleep_counter[key] -= 1
+        recommender.update(arm, reward)
+
+    return target_pulls, target_pull_ratios, attack_cost
+
+def least_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, sigma=1, delta0=0.05, bounded=False):
+    recommender = UCBRecommender(n_arms, rho)
+    target_pulls = 0
+    estimated_rewards = np.zeros(n_arms)
+    arm_pulls = np.zeros(n_arms)
+    target_pull_ratios = []
+    attacked_list = []
+    attack_cost = 0.0
+
+    for t in range(1, T + n_arms + 1):
+        arm = recommender.play()
+        reward = get_reward_from_matrix(reward_matrix, arm)
+        arm_pulls[arm] += 1
+        estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
+
+        if t > n_arms:
+            if arm not in attacked_list and arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)):
+                attacked_list.append(arm)
+
+                N_target = arm_pulls[target_arm]
+                beta_val = beta(N_target, sigma, n_arms, delta0)
+                mu_target = estimated_rewards[target_arm]
+                mu_arm = estimated_rewards[arm]
+                pulls_arm = recommender.pulls[arm]
+
+                desired_avg = mu_target - 2 * beta_val - 3 * sigma
+                fake_reward = desired_avg * (pulls_arm + 1) - mu_arm * pulls_arm
+
+                if bounded:
+                    fake_reward = np.clip(fake_reward, 0.0, 1.0)
+
+                attack_cost += abs(fake_reward - reward)
+                recommender.update(arm, fake_reward)
+
+            if arm == target_arm:
+                target_pulls += 1
+            target_pull_ratio = target_pulls / t
+            target_pull_ratios.append(target_pull_ratio)
+
         recommender.update(arm, reward)
 
     return target_pulls, target_pull_ratios, attack_cost
@@ -313,6 +360,7 @@ def plot_attack_cost_vs_delta0_real(n_arms=10, rho=1.0, T=int(1e4), a_tilde=0.0,
 def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1.0, delta0=0.2, trials=10):
     all_ratios_sbi = []
     all_ratios_pbi = []
+    all_ratios_li = []
 
     for _ in range(trials):
         reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
@@ -331,12 +379,21 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
         )
         all_ratios_pbi.append(target_pull_ratios_pbi)
 
+        target_pulls_li, target_pull_ratios_li, _ = least_injection_attack_real(
+            n_arms, target_arm, rho, T, reduced_matrix, sigma=sigma, delta0=delta0
+        )
+        all_ratios_li.append(target_pull_ratios_li)
+
+
+
     avg_ratios_sbi = np.mean(all_ratios_sbi, axis=0)
     avg_ratios_pbi = np.mean(all_ratios_pbi, axis=0)
+    avg_ratios_li = np.mean(all_ratios_li, axis = 0)
     
     plt.figure(figsize=(12, 8))
     plt.plot(range(1, T + 1), avg_ratios_sbi, label="Simultaneous Bounded Injection", color='blue', linestyle='dotted', marker='o', markersize=4)
     plt.plot(range(1, T + 1), avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='--', marker='x', markersize=1)
+    plt.plot(range(1, T + 1), avg_ratios_li, label="Least Injection", color='green', linestyle='-', marker='.', markersize=1)
     plt.tick_params(labelsize=27)
     plt.xlabel("Rounds", fontsize=30)
     plt.ylabel("Target Arm Selection Ratio", fontsize=30)
@@ -443,8 +500,8 @@ if __name__ == "__main__":
     # plot_attack_cost_real()
     # plot_attack_cost_vs_delta0_real()
 
-    #experiment_comparison_injection_real()
-    plot_attack_cost_vs_delta0_comparison()
+    experiment_comparison_injection_real()
+    # plot_attack_cost_vs_delta0_comparison()
     #plot_attack_cost_comparison()
 
 
