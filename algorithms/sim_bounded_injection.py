@@ -115,10 +115,10 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
     target_pull_ratios = []
     attack_cost = 0.0
     attack_list = []
-    injection_dict = {}
-    sleep_counter = {}
-    a_tildes = {}
-    injection_counter = 0
+    injection_dict = {} 
+    sleep_counter = {} 
+    a_tildes = {}     
+    
     for t in range(1, T + 1 + n_arms):
         arm = recommender.play()
         reward = get_reward_from_matrix(reward_matrix, arm)
@@ -126,62 +126,72 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
         estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
 
         if t > n_arms:
-            # print(t)
-            # print(f"Injection list: {len(injection_list)}")
-            for arm_attack in attack_list:
+            for arm_attack in attack_list[:]:  
                 mu_i = estimated_rewards[arm_attack]
                 mu_k = estimated_rewards[target_arm]
                 beta_k = beta(arm_pulls[target_arm], sigma, n_arms, delta0)
                 l_hat = mu_k - 2 * beta_k - 3 * sigma * delta0
 
-                # Number of injection rounds n_tilde
                 if arm_attack not in a_tildes:
                     a_tilde_new = min(a_tilde, mu_k - 3 * beta_k - 3 * sigma * delta0)
                     a_tildes[arm_attack] = a_tilde_new
                 else:
                     a_tilde_new = a_tildes[arm_attack]
 
-                n_tilde = math.ceil((mu_i - l_hat) / (l_hat - a_tilde_new) * math.ceil(math.log(T) / delta0**2))             
-                mu_tic = ((arm_pulls[arm_attack] * mu_i) + f*a_tilde) / (arm_pulls[arm_attack] + f)
-                exponent = (((mu_k - 2 * beta_k - mu_tic) / (3 * sigma)) ** 2) * (arm_pulls[arm_attack] + f)
-                if exponent < 40:
-                    r_new = min(R, (n_tilde/f) * math.exp(exponent) - t - f) # prevents overflow errors
-                else:
-                    r_new = R
+                n_tilde = math.ceil((mu_i - l_hat) / (l_hat - a_tilde_new) * math.ceil(math.log(T) / delta0**2))
+                
+                # Optimize R_i 
+                max_c = max(1, math.ceil(n_tilde / f))
+                r_candidates = []
 
-                if arm_attack not in injection_dict:
-                    injection_dict[arm_attack] = []
+                for c in range(1, max_c + 1):
+                    total_injected_samples = f * c
+                    mu_tilde_i_c = ((arm_pulls[arm_attack] * mu_i) + total_injected_samples * a_tilde_new) / (arm_pulls[arm_attack] + total_injected_samples)
+                    
+                    numerator = mu_k - 2 * beta_k - mu_tilde_i_c
+                    exponent = ((numerator / (3 * sigma)) ** 2) * (arm_pulls[arm_attack] + f * c)
+                    
+                    if exponent < 40:  # Prevent overflow
+                        r_candidate = (1/c) * math.exp(exponent) - t - f
+                        r_candidates.append(max(0, r_candidate))
+                    else:
+                        r_candidates.append(float('inf'))
 
-                injection_list = injection_dict[arm_attack]
-                for _ in range(int(n_tilde)):
-                    injection_list.append((arm_attack, a_tilde_new, r_new))
+                # Minimum R_i across all c values
+                r_new = min(r_candidates) if r_candidates else 0
+                
+                #print(f"Round {t}: Arm {arm_attack} - R_i = {r_new:.2f} (candidates: {[f'{x:.2f}' for x in r_candidates[:5]]})")  # Show first 5 candidates
+
+                injection_dict[arm_attack] = {
+                    'remaining': int(n_tilde),
+                    'r_value': r_new,
+                    'a_tilde': a_tilde_new,
+                    'next_injection': t 
+                }
+                
+                print(f"Round {t}: Setup attack for arm {arm_attack}, n_tilde={n_tilde}, R_i={r_new}")
                 attack_list.remove(arm_attack)
             
-            for key in injection_dict:
-                if key not in sleep_counter:
-                    sleep_counter[key] = 0
-                if sleep_counter[key] <= 0:
-                    injection_list = injection_dict[key]
-                    injections_to_do = injection_list[:min(f, len(injection_list))]
-                    counter = 0
-                    r = 0
-                    # print(len(injections_to_do))
-                    for injection in injections_to_do:
-                        counter += 1
-                        r = injection[2]
-                        attack_cost += abs(injection[1] - estimated_rewards[injection[0]])
-                        recommender.update(injection[0], injection[1])
-                    injection_dict[key] = injection_list[counter:]
-                    sleep_counter[key] = r
-                    injection_counter += 1
+            # Periodic injections
+            for key in list(injection_dict.keys()):
+                injection_plan = injection_dict[key]
+                
+                if injection_plan['next_injection'] <= t and injection_plan['remaining'] > 0:
+                    samples_to_inject = min(f, injection_plan['remaining'])
                     
-            # print(f"Arm pulled {arm}")
-            # print(arm==target_arm)
+                    print(f"Round {t}: Injecting {samples_to_inject} samples for arm {key}, {injection_plan['remaining']} remaining")
+
+                    for _ in range(samples_to_inject):
+                        attack_cost += abs(injection_plan['a_tilde'] - estimated_rewards[key])
+                        recommender.update(key, injection_plan['a_tilde'])
+                    
+                    injection_plan['remaining'] -= samples_to_inject
+                    injection_plan['next_injection'] = t + f + injection_plan['r_value']
+                                        
+                    if injection_plan['remaining'] <= 0:
+                        del injection_dict[key]
+            
             if arm != target_arm and arm_pulls[arm] >= math.ceil(math.log(T) / (delta0**2)) and arm not in attack_list:
-                print(arm_pulls[arm])
-                print(math.ceil(math.log(T)/ (delta0**2)))
-                print(math.ceil(math.log(T / (delta0**2))))
-                print("-" * 20)
                 attack_list.append(arm)
 
             if arm == target_arm:
@@ -189,9 +199,7 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
 
             target_pull_ratio = target_pulls / t
             target_pull_ratios.append(target_pull_ratio)
-            for key in sleep_counter:
-                if sleep_counter[key] > 0:
-                    sleep_counter[key] -= 1
+            
         recommender.update(arm, reward)
 
     return target_pulls, target_pull_ratios, attack_cost
