@@ -73,13 +73,15 @@ def simultaneous_bounded_injection_attack_real(n_arms, target_arm, rho, T, rewar
     target_pull_ratios = []
     attack_cost = 0.0
 
-    for t in range(1, T + 1 + n_arms):
+    t = 0
+    while t < T + n_arms:
         arm = recommender.play()
         reward = get_reward_from_matrix(reward_matrix, arm)
 
         # Update empirical reward
         arm_pulls[arm] += 1
         estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
+        t += 1
 
         if t > n_arms:
             # SBI Attack Condition
@@ -92,8 +94,15 @@ def simultaneous_bounded_injection_attack_real(n_arms, target_arm, rho, T, rewar
                 a_tilde_new = min(a_tilde, mu_k - 3 * beta(arm_pulls[target_arm], sigma, n_arms, delta0) - 3 * sigma * delta0)
                 n_tilde = (mu_i - l_hat) * math.log(T) / (l_hat - a_tilde_new) / delta0**2
                 for _ in range(int(n_tilde)):
+                    if t >= T + n_arms:
+                        break
                     recommender.update(arm, a_tilde_new)
                     attack_cost += abs(a_tilde_new - mu_i)
+                    arm_pulls[arm] += 1
+                    estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + a_tilde_new) / arm_pulls[arm]
+                    t += 1
+                    target_pull_ratio = target_pulls / t
+                    target_pull_ratios.append(target_pull_ratio)
                     
                 attack_trials.append(t)
 
@@ -398,16 +407,16 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
     avg_ratios_pbi = np.mean(all_ratios_pbi, axis=0)
     avg_ratios_li = np.mean(all_ratios_li, axis = 0)
     
-    plt.figure(figsize=(12, 8), dpi=100)
+    plt.figure(figsize=(12, 8))
     plt.plot(range(1, T + 1), avg_ratios_sbi, label="Simultaneous Bounded Injection", color='blue', linestyle='dotted', marker='o', markersize=4)
-    plt.plot(range(1, T + 1), avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='--', marker='x', markersize=1)
-    plt.plot(range(1, T + 1), avg_ratios_li, label="Least Injection", color='green', linestyle='-', marker='.', markersize=1)
+    plt.plot(range(1, T + 1), avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='-', marker='x', markersize=1)
+    plt.plot(range(1, T + 1), avg_ratios_li, label="Least Injection", color='green', linestyle='--', marker='.', markersize=1)
     plt.tick_params(labelsize=27)
     plt.xlabel("Rounds", fontsize=30)
     plt.ylabel("Target Arm Selection Ratio", fontsize=30)
-    plt.legend(fontsize=44, loc='lower right', frameon=True, borderpad=2.5, labelspacing=2, handlelength=4, handletextpad=2)
+    # plt.legend(fontsize=44, loc='lower right', frameon=True, borderpad=2.5, labelspacing=2, handlelength=4, handletextpad=2)
     plt.grid(True)
-    plt.legend()
+    # plt.legend()
     plt.tight_layout()
     plt.show()
 
@@ -526,8 +535,8 @@ if __name__ == "__main__":
     # plot_attack_cost_real()
     # plot_attack_cost_vs_delta0_real()
 
-    # experiment_comparison_injection_real()
+    experiment_comparison_injection_real()
     # plot_attack_cost_vs_delta0_comparison()
-    plot_attack_cost_comparison()
+    # plot_attack_cost_comparison()
 
 
