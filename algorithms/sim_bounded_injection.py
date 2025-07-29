@@ -169,7 +169,7 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
                     'next_injection': t 
                 }
                 
-                print(f"Round {t}: Setup attack for arm {arm_attack}, n_tilde={n_tilde}, R_i={r_new}")
+                # print(f"Round {t}: Setup attack for arm {arm_attack}, n_tilde={n_tilde}, R_i={r_new}")
                 attack_list.remove(arm_attack)
             
             # Periodic injections
@@ -179,7 +179,7 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
                 if injection_plan['next_injection'] <= t and injection_plan['remaining'] > 0:
                     samples_to_inject = min(f, injection_plan['remaining'])
                     
-                    print(f"Round {t}: Injecting {samples_to_inject} samples for arm {key}, {injection_plan['remaining']} remaining")
+                    # print(f"Round {t}: Injecting {samples_to_inject} samples for arm {key}, {injection_plan['remaining']} remaining")
 
                     for _ in range(samples_to_inject):
                         attack_cost += abs(injection_plan['a_tilde'] - estimated_rewards[key])
@@ -398,14 +398,14 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
     avg_ratios_pbi = np.mean(all_ratios_pbi, axis=0)
     avg_ratios_li = np.mean(all_ratios_li, axis = 0)
     
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(12, 8), dpi=100)
     plt.plot(range(1, T + 1), avg_ratios_sbi, label="Simultaneous Bounded Injection", color='blue', linestyle='dotted', marker='o', markersize=4)
     plt.plot(range(1, T + 1), avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='--', marker='x', markersize=1)
     plt.plot(range(1, T + 1), avg_ratios_li, label="Least Injection", color='green', linestyle='-', marker='.', markersize=1)
     plt.tick_params(labelsize=27)
     plt.xlabel("Rounds", fontsize=30)
     plt.ylabel("Target Arm Selection Ratio", fontsize=30)
-    plt.legend(fontsize=28)
+    plt.legend(fontsize=44, loc='lower right', frameon=True, borderpad=2.5, labelspacing=2, handlelength=4, handletextpad=2)
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
@@ -414,8 +414,10 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
 def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delta0=0.2, R=5000, f=5, trials=10):
     avg_costs_sbi = []
     avg_costs_pbi = []
+    avg_costs_li = []
     std_costs_sbi = []
     std_costs_pbi = []
+    std_costs_li = []
     base_T_values = np.logspace(1, 7, num=10, dtype=int)
     custom_T_values = np.array([int(0.4e7), int(0.6e7), int(0.8e7)])
     T_values = np.unique(np.concatenate((base_T_values, custom_T_values)))
@@ -423,6 +425,7 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     for T in T_values:
         trial_costs_sbi = []
         trial_costs_pbi = []
+        trial_costs_li = []
 
         for _ in range(trials):
             reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
@@ -440,18 +443,24 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
                 n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0)
             trial_costs_pbi.append(attack_cost_pbi)
 
+            _, _, attack_cost_li = least_injection_attack_real(n_arms, target_arm, rho, T, reduced_matrix, sigma=sigma, delta0=delta0)
+            trial_costs_li.append(attack_cost_li)
+
         avg_costs_sbi.append(np.mean(trial_costs_sbi))
         avg_costs_pbi.append(np.mean(trial_costs_pbi))
+        avg_costs_li.append(np.mean(trial_costs_li))
         std_costs_sbi.append(np.std(trial_costs_sbi))
         std_costs_pbi.append(np.std(trial_costs_pbi))
+        std_costs_li.append(np.std(trial_costs_li))
 
     plt.figure(figsize=(12, 8))
     plt.errorbar(T_values, avg_costs_sbi, yerr=std_costs_sbi, marker='o', label='Simultaneous Bounded Injection', linestyle='dotted', color='blue', capsize=5)
     plt.errorbar(T_values, avg_costs_pbi, yerr=std_costs_pbi, marker='x', label='Periodic Bounded Injection', linestyle='--', color='red', capsize=5)
+    plt.errorbar(T_values, avg_costs_li, yerr=std_costs_li, marker='s', label='Least Injection', linestyle='-', color='green', capsize=5)
     plt.tick_params(labelsize=27)
     plt.xlabel("T", fontsize=30)
     plt.ylabel("Average Total Attack Cost", fontsize=30)
-    plt.legend(fontsize=28)
+    plt.legend(fontsize=44)
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
@@ -461,13 +470,16 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
 def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tilde=0.0, sigma=1.0, R=5000, f=5, trials=10):
     avg_costs_sbi = []
     avg_costs_pbi = []
+    avg_costs_li = []
     std_costs_sbi = []
     std_costs_pbi = []
+    std_costs_li = []
     delta0_values = np.linspace(0.1, 0.5, num=20)
 
     for delta0 in delta0_values:
         trial_costs_sbi = []
         trial_costs_pbi = []
+        trial_costs_li = []
 
         for _ in range(trials):
             reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
@@ -485,14 +497,20 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
                 n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0)
             trial_costs_pbi.append(attack_cost_pbi)
 
+            _, _, attack_cost_li = least_injection_attack_real(n_arms, target_arm, rho, T, reduced_matrix, sigma=sigma, delta0=delta0)
+            trial_costs_li.append(attack_cost_li)
+
         avg_costs_sbi.append(np.mean(trial_costs_sbi))
         avg_costs_pbi.append(np.mean(trial_costs_pbi))
+        avg_costs_li.append(np.mean(trial_costs_li))
         std_costs_sbi.append(np.std(trial_costs_sbi))
         std_costs_pbi.append(np.std(trial_costs_pbi))
+        std_costs_li.append(np.std(trial_costs_li))
 
     plt.figure(figsize=(12, 8))
     plt.errorbar(delta0_values, avg_costs_sbi, yerr=std_costs_sbi, marker='o', label='Simultaneous Bounded Injection', linestyle='dotted', color='blue', capsize=5)
     plt.errorbar(delta0_values, avg_costs_pbi, yerr=std_costs_pbi, marker='x', label='Periodic Bounded Injection', linestyle='--', color='red', capsize=5)
+    plt.errorbar(delta0_values, avg_costs_li, yerr=std_costs_li, marker='s', label='Least Injection', linestyle='-', color='green', capsize=5)
     plt.tick_params(labelsize=27)
     plt.xlabel("δ₀ (Confidence Parameter)", fontsize=30)
     plt.ylabel("Average Total Attack Cost", fontsize=30)
@@ -508,8 +526,8 @@ if __name__ == "__main__":
     # plot_attack_cost_real()
     # plot_attack_cost_vs_delta0_real()
 
-    experiment_comparison_injection_real()
+    # experiment_comparison_injection_real()
     # plot_attack_cost_vs_delta0_comparison()
-    #plot_attack_cost_comparison()
+    plot_attack_cost_comparison()
 
 
