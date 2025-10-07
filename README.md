@@ -4,7 +4,7 @@
 
 This project investigates the robustness of recommender systems through **online learning** and **multi-armed bandit (MAB) algorithms**, with a particular focus on adversarial attacks and defense.
 
-Working under **Postdoc Jinhang Zuo** along with **Eric He** and **Qirun Zheng**, this research explores how knowledge from adversarial attacks on stochastic bandits can be leveraged to develop both:
+Working under **Professor Jinhang Zuo** along with **Eric He** and **Qirun Zheng**, this research explores how knowledge from adversarial attacks on stochastic bandits can be leveraged to develop both:
 
 - Novel **attack algorithms** targeting recommender systems
 - More robust **reinforcement learning (RL) policies** to defend against such attacks
