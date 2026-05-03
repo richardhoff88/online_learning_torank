@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import math
 import sys
 import os
+import warnings
 
 sys.path.append(os.path.abspath(".."))
 from attack import UCBRecommender, get_real_reward
@@ -19,6 +20,73 @@ def calculate_a_tilde(mu_k, n_arms, sigma, delta0):
 
 def get_reward_from_matrix(reward_matrix, arm):
     return np.mean(reward_matrix[:, arm])
+
+def sample_real_problem(n_arms):
+    reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
+    selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
+    reduced_matrix = reduced_matrix[:, selected_movie_indices]
+    movie_interactions = np.sum(reduced_matrix, axis=0)
+    target_arm = np.argmin(movie_interactions)
+    return reduced_matrix, target_arm
+
+def get_problem_means(reward_matrix):
+    return np.mean(reward_matrix, axis=0)
+
+def trim_ratio_runs(*ratio_runs):
+    min_len = min(min(len(run) for run in runs) for runs in ratio_runs)
+    trimmed = [np.array([run[:min_len] for run in runs]) for runs in ratio_runs]
+    return min_len, trimmed
+
+def ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0):
+    beta_one = beta(1, sigma, n_arms, delta0)
+    target_mean = means[target_arm]
+    log_term = math.log(max(T, 2)) / (delta0**2)
+    total_cost = 0.0
+
+    for arm, mean in enumerate(means):
+        if arm == target_arm:
+            continue
+        delta_i = mean - target_mean
+        total_cost += (delta_i + 4 * beta_one + 3 * sigma * delta0) * log_term
+
+    return total_cost
+
+def ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde):
+    beta_one = beta(1, sigma, n_arms, delta0)
+    target_mean = means[target_arm]
+    denominator = target_mean - 3 * beta_one - 3 * sigma * delta0 - a_tilde
+    if denominator <= 0:
+        return np.nan
+
+    log_term = math.log(max(T, 2)) / (delta0**2)
+    total_cost = 0.0
+
+    for arm, mean in enumerate(means):
+        if arm == target_arm:
+            continue
+        delta_i = mean - target_mean
+        total_cost += ((mean - a_tilde) / denominator) * (delta_i + 4 * beta_one + 3 * sigma * delta0) * log_term
+
+    return total_cost
+
+def ucb_pbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde):
+    # Should have around same theoretical injection cost because we inject the same number of samples as SBI, 
+    # just in a different pattern. The cost per sample is also similar since we are injecting the same a_tilde value.
+    return ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
+
+def warn_if_all_invalid(curve_values, label, plot_name):
+    if np.all(np.isnan(curve_values)):
+        warnings.warn(
+            f"{label} is undefined for all sampled points in {plot_name}; "
+            "the exact UCB upper bound is vacuous under the current parameters.",
+            RuntimeWarning,
+        )
+
+def safe_nanmean(values):
+    values = np.asarray(values, dtype=float)
+    if np.all(np.isnan(values)):
+        return np.nan
+    return np.nanmean(values)
 
 def simultaneous_bounded_injection_attack(n_arms, target_arm, rho, T, means, std_devs, a_tilde, delta0=0.05):
     recommender = UCBRecommender(n_arms, rho)
@@ -213,6 +281,77 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
 
     return target_pulls, target_pull_ratios, attack_cost
 
+def heuristic_probabilistic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_tilde, f, R, delta0, sigma=1,):
+    recommender = UCBRecommender(n_arms, rho)
+    target_pulls = 0
+    estimated_rewards = np.zeros(n_arms)
+    arm_pulls = np.zeros(n_arms)
+    target_pull_ratios = []
+    attack_cost = 0.0
+    attack_list = []
+    injection_dict = {}
+    a_tildes = {}
+    total_rounds = T + n_arms
+
+    for t in range(1, total_rounds + 1):
+        arm = recommender.play()
+        reward = get_reward_from_matrix(reward_matrix, arm)
+        arm_pulls[arm] += 1
+        estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
+
+        if t > n_arms:
+            for arm_attack in attack_list[:]:
+                mu_i = estimated_rewards[arm_attack]
+                mu_k = estimated_rewards[target_arm]
+                beta_k = beta(arm_pulls[target_arm], sigma, n_arms, delta0)
+                l_hat = mu_k - 2 * beta_k - 3 * sigma * delta0
+
+                if arm_attack not in a_tildes:
+                    a_tilde_new = min(a_tilde, mu_k - 3 * beta_k - 3 * sigma * delta0)
+                    a_tildes[arm_attack] = a_tilde_new
+                else:
+                    a_tilde_new = a_tildes[arm_attack]
+
+                n_tilde = math.ceil((mu_i - l_hat) / (l_hat - a_tilde_new) * math.ceil(math.log(T) / delta0**2))
+                effective_round = max(t - n_arms, 0)
+                remaining_attack_rounds = max(T - effective_round, 0)
+
+                injection_dict[arm_attack] = {
+                    'remaining': min(max(int(n_tilde), 0), remaining_attack_rounds),
+                    'a_tilde': a_tilde_new,
+                }
+                attack_list.remove(arm_attack)
+
+            for key in list(injection_dict.keys()):
+                injection_plan = injection_dict[key]
+                if injection_plan['remaining'] <= 0:
+                    del injection_dict[key]
+                    continue
+
+                effective_round = max(t - n_arms, 0)
+                remaining_attack_rounds = max(T - effective_round, 1)
+                inject_probability = min(1.0, injection_plan['remaining'] / remaining_attack_rounds)
+                if np.random.random() < inject_probability:
+                    attack_cost += abs(injection_plan['a_tilde'] - estimated_rewards[key])
+                    recommender.update(key, injection_plan['a_tilde'])
+                    injection_plan['remaining'] -= 1
+
+                    if injection_plan['remaining'] <= 0:
+                        del injection_dict[key]
+
+            if arm != target_arm and arm_pulls[arm] >= math.ceil(math.log(T) / (delta0**2)) and arm not in attack_list and arm not in injection_dict:
+                attack_list.append(arm)
+
+            if arm == target_arm:
+                target_pulls += 1
+
+            target_pull_ratio = target_pulls / t
+            target_pull_ratios.append(target_pull_ratio)
+
+        recommender.update(arm, reward)
+
+    return target_pulls, target_pull_ratios, attack_cost
+
 def least_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, sigma=1, delta0=0.05, bounded=False):
     recommender = UCBRecommender(n_arms, rho)
     target_pulls = 0
@@ -378,13 +517,10 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
     all_ratios_sbi = []
     all_ratios_pbi = []
     all_ratios_li = []
+    all_ratios_heuristic = []
 
     for _ in range(trials):
-        reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
-        selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
-        reduced_matrix = reduced_matrix[:, selected_movie_indices]
-        movie_interactions = np.sum(reduced_matrix, axis=0)
-        target_arm = np.argmin(movie_interactions)
+        reduced_matrix, target_arm = sample_real_problem(n_arms)
 
         target_pulls_sbi, _, target_pull_ratios_sbi, _ = simultaneous_bounded_injection_attack_real(
             n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, sigma=sigma, delta0=delta0
@@ -401,14 +537,18 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
         )
         all_ratios_li.append(target_pull_ratios_li)
 
-    min_len = min(
-        min(len(x) for x in all_ratios_sbi),
-        min(len(x) for x in all_ratios_pbi),
-        min(len(x) for x in all_ratios_li)
+        _, target_pull_ratios_heuristic, _ = heuristic_probabilistic_injection_attack_real(
+            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, f=5, R=5000, sigma=sigma, delta0=delta0
+        )
+        all_ratios_heuristic.append(target_pull_ratios_heuristic)
+
+    min_len, trimmed_runs = trim_ratio_runs(
+        all_ratios_sbi,
+        all_ratios_pbi,
+        all_ratios_li,
+        all_ratios_heuristic,
     )
-    all_ratios_sbi = np.array([x[:min_len] for x in all_ratios_sbi])
-    all_ratios_pbi = np.array([x[:min_len] for x in all_ratios_pbi])
-    all_ratios_li = np.array([x[:min_len] for x in all_ratios_li])
+    all_ratios_sbi, all_ratios_pbi, all_ratios_li, all_ratios_heuristic = trimmed_runs
 
     avg_ratios_sbi = np.mean(all_ratios_sbi, axis=0)
     std_ratios_sbi = np.std(all_ratios_sbi, axis=0)
@@ -416,21 +556,26 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
     std_ratios_pbi = np.std(all_ratios_pbi, axis=0)
     avg_ratios_li = np.mean(all_ratios_li, axis=0)
     std_ratios_li = np.std(all_ratios_li, axis=0)
+    avg_ratios_heuristic = np.mean(all_ratios_heuristic, axis=0)
+    std_ratios_heuristic = np.std(all_ratios_heuristic, axis=0)
 
     x = np.arange(1, min_len + 1)
     
     plt.figure(figsize=(12, 8))
-    plt.plot(x, avg_ratios_sbi, label="Simultaneous Bounded Injection", color='blue', linestyle='-', marker='o', linewidth=2)
+    plt.plot(x, avg_ratios_sbi, label="Simultaneous Bounded Injection", color='blue', linestyle='-', marker='o', linewidth=2, markevery=3000)
     plt.fill_between(x, avg_ratios_sbi - std_ratios_sbi, avg_ratios_sbi + std_ratios_sbi, color='blue', alpha=0.4)
-    plt.plot(x, avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='-', marker='x', linewidth=2)
+    plt.plot(x, avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='-', marker='x', linewidth=1, markevery=3000)
     plt.fill_between(x, avg_ratios_pbi - std_ratios_pbi, avg_ratios_pbi + std_ratios_pbi, color='red', alpha=0.4)
-    plt.plot(x, avg_ratios_li, label="Least Injection", color='green', linestyle='-', marker='s', linewidth=2)
+    plt.plot(x, avg_ratios_li, label="Least Injection", color='green', linestyle='-', marker='s', linewidth=2, markevery=3000)
     plt.fill_between(x, avg_ratios_li - std_ratios_li, avg_ratios_li + std_ratios_li, color='green', alpha=0.4)
+    plt.plot(x, avg_ratios_heuristic, label="Heuristic Probabilistic Baseline", color='purple', linestyle='-.', marker='^', linewidth=2, markevery=3000)
+    plt.fill_between(x, avg_ratios_heuristic - std_ratios_heuristic, avg_ratios_heuristic + std_ratios_heuristic, color='purple', alpha=0.25)
 
     plt.tick_params(labelsize=27)
     plt.xlabel("Rounds", fontsize=30)
     plt.ylabel("Target Arm Selection Ratio", fontsize=30)
     plt.grid(True)
+    plt.legend(fontsize=18)
     plt.tight_layout()
     plt.show()
 
@@ -438,9 +583,14 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     avg_costs_sbi = []
     avg_costs_pbi = []
     avg_costs_li = []
+    avg_costs_heuristic = []
+    avg_theory_sbi = []
+    avg_theory_pbi = []
+    avg_theory_li = []
     std_costs_sbi = []
     std_costs_pbi = []
     std_costs_li = []
+    std_costs_heuristic = []
     base_T_values = np.logspace(1, 7, num=10, dtype=int)
     custom_T_values = np.array([int(0.4e7), int(0.6e7), int(0.8e7)])
     T_values = np.unique(np.concatenate((base_T_values, custom_T_values)))
@@ -449,14 +599,14 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
         trial_costs_sbi = []
         trial_costs_pbi = []
         trial_costs_li = []
+        trial_costs_heuristic = []
+        trial_theory_sbi = []
+        trial_theory_pbi = []
+        trial_theory_li = []
 
         for _ in range(trials):
-            reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
-            selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
-            reduced_matrix = reduced_matrix[:, selected_movie_indices]
-
-            movie_interactions = np.sum(reduced_matrix, axis=0)
-            target_arm = np.argmin(movie_interactions)
+            reduced_matrix, target_arm = sample_real_problem(n_arms)
+            means = get_problem_means(reduced_matrix)
 
             _, _, _, attack_cost_sbi = simultaneous_bounded_injection_attack_real(
                 n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, sigma=sigma, delta0=delta0)
@@ -469,19 +619,44 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
             _, _, attack_cost_li = least_injection_attack_real(n_arms, target_arm, rho, T, reduced_matrix, sigma=sigma, delta0=delta0)
             trial_costs_li.append(attack_cost_li)
 
+            _, _, attack_cost_heuristic = heuristic_probabilistic_injection_attack_real(
+                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0
+            )
+            trial_costs_heuristic.append(attack_cost_heuristic)
+
+            trial_theory_li.append(
+                ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0)
+            )
+            trial_theory_sbi.append(
+                ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
+            )
+            trial_theory_pbi.append(
+                ucb_pbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
+            )
+
         avg_costs_sbi.append(np.mean(trial_costs_sbi))
         avg_costs_pbi.append(np.mean(trial_costs_pbi))
         avg_costs_li.append(np.mean(trial_costs_li))
+        avg_costs_heuristic.append(np.mean(trial_costs_heuristic))
+        avg_theory_sbi.append(safe_nanmean(trial_theory_sbi))
+        avg_theory_pbi.append(safe_nanmean(trial_theory_pbi))
+        avg_theory_li.append(safe_nanmean(trial_theory_li))
         std_costs_sbi.append(np.std(trial_costs_sbi))
         std_costs_pbi.append(np.std(trial_costs_pbi))
         std_costs_li.append(np.std(trial_costs_li))
+        std_costs_heuristic.append(np.std(trial_costs_heuristic))
 
     avg_costs_sbi = np.array(avg_costs_sbi)
     avg_costs_pbi = np.array(avg_costs_pbi)
     avg_costs_li = np.array(avg_costs_li)
+    avg_costs_heuristic = np.array(avg_costs_heuristic)
+    avg_theory_sbi = np.array(avg_theory_sbi)
+    avg_theory_pbi = np.array(avg_theory_pbi)
+    avg_theory_li = np.array(avg_theory_li)
     std_costs_sbi = np.array(std_costs_sbi)
     std_costs_pbi = np.array(std_costs_pbi)
     std_costs_li = np.array(std_costs_li)
+    std_costs_heuristic = np.array(std_costs_heuristic)
 
     plt.figure(figsize=(12, 8))
 
@@ -494,10 +669,25 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     plt.plot(T_values, avg_costs_li, label='Least Injection', color='green', linestyle='-', marker='s', linewidth=2)
     plt.fill_between(T_values, avg_costs_li - std_costs_li, avg_costs_li + std_costs_li, color='green', alpha=0.2)
 
+    plt.plot(T_values, avg_costs_heuristic, label='Heuristic Probabilistic Baseline', color='purple', linestyle='-.', marker='^', linewidth=2)
+    plt.fill_between(T_values, avg_costs_heuristic - std_costs_heuristic, avg_costs_heuristic + std_costs_heuristic, color='purple', alpha=0.2)
+
+    warn_if_all_invalid(avg_theory_li, "LI theoretical upper bound", "plot_attack_cost_comparison")
+    warn_if_all_invalid(avg_theory_sbi, "SBI theoretical upper bound", "plot_attack_cost_comparison")
+    warn_if_all_invalid(avg_theory_pbi, "PBI theoretical upper bound", "plot_attack_cost_comparison")
+
+    li_mask = np.isfinite(avg_theory_li)
+    sbi_mask = np.isfinite(avg_theory_sbi)
+    pbi_mask = np.isfinite(avg_theory_pbi)
+    plt.plot(T_values[li_mask], avg_theory_li[li_mask], label='LI Theoretical Upper Bound', color='darkgreen', linestyle=':', linewidth=2)
+    plt.plot(T_values[sbi_mask], avg_theory_sbi[sbi_mask], label='SBI Theoretical Upper Bound', color='navy', linestyle=':', linewidth=2)
+    plt.plot(T_values[pbi_mask], avg_theory_pbi[pbi_mask], label='PBI UCB Upper Bound (same total n_i as SBI)', color='darkred', linestyle=':', linewidth=2)
+
     plt.tick_params(labelsize=27)
     plt.xlabel("T", fontsize=30)
     plt.ylabel("Average Total Attack Cost", fontsize=30)
     plt.grid(True)
+    plt.legend(fontsize=16)
     plt.tight_layout()
     plt.show()
 
@@ -506,23 +696,28 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
     avg_costs_sbi = []
     avg_costs_pbi = []
     avg_costs_li = []
+    avg_costs_heuristic = []
+    avg_theory_sbi = []
+    avg_theory_pbi = []
+    avg_theory_li = []
     std_costs_sbi = []
     std_costs_pbi = []
     std_costs_li = []
+    std_costs_heuristic = []
     delta0_values = np.linspace(0.1, 0.5, num=20)
 
     for delta0 in delta0_values:
         trial_costs_sbi = []
         trial_costs_pbi = []
         trial_costs_li = []
+        trial_costs_heuristic = []
+        trial_theory_sbi = []
+        trial_theory_pbi = []
+        trial_theory_li = []
 
         for _ in range(trials):
-            reduced_matrix = np.load(os.path.join("..", "dataset", "movielens.npy"))
-            selected_movie_indices = np.random.choice(reduced_matrix.shape[1], size=n_arms, replace=False)
-            reduced_matrix = reduced_matrix[:, selected_movie_indices]
-
-            movie_interactions = np.sum(reduced_matrix, axis=0)
-            target_arm = np.argmin(movie_interactions)
+            reduced_matrix, target_arm = sample_real_problem(n_arms)
+            means = get_problem_means(reduced_matrix)
 
             _, _, _, attack_cost_sbi = simultaneous_bounded_injection_attack_real(
                 n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, sigma=sigma, delta0=delta0)
@@ -535,19 +730,44 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
             _, _, attack_cost_li = least_injection_attack_real(n_arms, target_arm, rho, T, reduced_matrix, sigma=sigma, delta0=delta0)
             trial_costs_li.append(attack_cost_li)
 
+            _, _, attack_cost_heuristic = heuristic_probabilistic_injection_attack_real(
+                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0
+            )
+            trial_costs_heuristic.append(attack_cost_heuristic)
+
+            trial_theory_li.append(
+                ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0)
+            )
+            trial_theory_sbi.append(
+                ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
+            )
+            trial_theory_pbi.append(
+                ucb_pbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
+            )
+
         avg_costs_sbi.append(np.mean(trial_costs_sbi))
         avg_costs_pbi.append(np.mean(trial_costs_pbi))
         avg_costs_li.append(np.mean(trial_costs_li))
+        avg_costs_heuristic.append(np.mean(trial_costs_heuristic))
+        avg_theory_sbi.append(safe_nanmean(trial_theory_sbi))
+        avg_theory_pbi.append(safe_nanmean(trial_theory_pbi))
+        avg_theory_li.append(safe_nanmean(trial_theory_li))
         std_costs_sbi.append(np.std(trial_costs_sbi))
         std_costs_pbi.append(np.std(trial_costs_pbi))
         std_costs_li.append(np.std(trial_costs_li))
+        std_costs_heuristic.append(np.std(trial_costs_heuristic))
 
     avg_costs_sbi = np.array(avg_costs_sbi)
     avg_costs_pbi = np.array(avg_costs_pbi)
     avg_costs_li = np.array(avg_costs_li)
+    avg_costs_heuristic = np.array(avg_costs_heuristic)
+    avg_theory_sbi = np.array(avg_theory_sbi)
+    avg_theory_pbi = np.array(avg_theory_pbi)
+    avg_theory_li = np.array(avg_theory_li)
     std_costs_sbi = np.array(std_costs_sbi)
     std_costs_pbi = np.array(std_costs_pbi)
     std_costs_li = np.array(std_costs_li)
+    std_costs_heuristic = np.array(std_costs_heuristic)
 
     plt.figure(figsize=(12, 8))
 
@@ -560,10 +780,25 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
     plt.plot(delta0_values, avg_costs_li, label='Least Injection', color='green', linestyle='-', marker='s', linewidth=2)
     plt.fill_between(delta0_values, avg_costs_li - std_costs_li, avg_costs_li + std_costs_li, color='green', alpha=0.2)
 
+    plt.plot(delta0_values, avg_costs_heuristic, label='Heuristic Probabilistic Baseline', color='purple', linestyle='-.', marker='^', linewidth=2)
+    plt.fill_between(delta0_values, avg_costs_heuristic - std_costs_heuristic, avg_costs_heuristic + std_costs_heuristic, color='purple', alpha=0.2)
+
+    warn_if_all_invalid(avg_theory_li, "LI theoretical upper bound", "plot_attack_cost_vs_delta0_comparison")
+    warn_if_all_invalid(avg_theory_sbi, "SBI theoretical upper bound", "plot_attack_cost_vs_delta0_comparison")
+    warn_if_all_invalid(avg_theory_pbi, "PBI theoretical upper bound", "plot_attack_cost_vs_delta0_comparison")
+
+    li_mask = np.isfinite(avg_theory_li)
+    sbi_mask = np.isfinite(avg_theory_sbi)
+    pbi_mask = np.isfinite(avg_theory_pbi)
+    plt.plot(delta0_values[li_mask], avg_theory_li[li_mask], label='LI Theoretical Upper Bound', color='darkgreen', linestyle=':', linewidth=2)
+    plt.plot(delta0_values[sbi_mask], avg_theory_sbi[sbi_mask], label='SBI Theoretical Upper Bound', color='navy', linestyle=':', linewidth=2)
+    plt.plot(delta0_values[pbi_mask], avg_theory_pbi[pbi_mask], label='PBI UCB Upper Bound (same total n_i as SBI)', color='darkred', linestyle=':', linewidth=2)
+
     plt.tick_params(labelsize=27)
     plt.xlabel("δ₀ (Confidence Parameter)", fontsize=30)
     plt.ylabel("Average Total Attack Cost", fontsize=30)
     plt.grid(True)
+    plt.legend(fontsize=16)
     plt.tight_layout()
     plt.show()
 
@@ -574,7 +809,5 @@ if __name__ == "__main__":
     # plot_attack_cost_vs_delta0_real()
 
     # experiment_comparison_injection_real()
-    plot_attack_cost_vs_delta0_comparison()
-    # plot_attack_cost_comparison()
-
-
+    # plot_attack_cost_vs_delta0_comparison()
+    plot_attack_cost_comparison()
