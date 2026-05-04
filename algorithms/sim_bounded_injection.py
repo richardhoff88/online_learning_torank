@@ -237,6 +237,61 @@ def simultaneous_bounded_injection_attack_real(n_arms, target_arm, rho, T, rewar
 
     return target_pulls, attack_trials, target_pull_ratios, attack_cost
 
+def get_sbi_injection_plan_real(n_arms, target_arm, rho, T, reward_matrix, a_tilde=0, sigma=1, delta0=0.05):
+    recommender = UCBRecommender(n_arms, rho)
+    estimated_rewards = np.zeros(n_arms)
+    arm_pulls = np.zeros(n_arms)
+    injection_plans = []
+    attack_cost = 0.0
+    attack_samples = 0
+
+    t = 0
+    while t < T + n_arms:
+        arm = recommender.play()
+        reward = get_reward_from_matrix(reward_matrix, arm)
+
+        arm_pulls[arm] += 1
+        estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
+        t += 1
+
+        if t > n_arms:
+            if arm != target_arm and arm_pulls[arm] >= math.log(T / (delta0**2)):
+                mu_i = estimated_rewards[arm]
+                mu_k = estimated_rewards[target_arm]
+                beta_k = beta(arm_pulls[target_arm], sigma, n_arms, delta0)
+                l_hat = mu_k - 2 * beta_k - 3 * sigma * delta0
+                a_tilde_new = min(a_tilde, mu_k - 3 * beta_k - 3 * sigma * delta0)
+                n_tilde = (mu_i - l_hat) * math.log(T) / (l_hat - a_tilde_new) / delta0**2
+                cost_per_sample = abs(a_tilde_new - mu_i)
+                planned_samples = 0
+                start_t = t
+
+                for _ in range(int(n_tilde)):
+                    if t >= T + n_arms:
+                        break
+                    recommender.update(arm, a_tilde_new)
+                    attack_cost += cost_per_sample
+                    planned_samples += 1
+                    attack_samples += 1
+                    arm_pulls[arm] += 1
+                    estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + a_tilde_new) / arm_pulls[arm]
+                    t += 1
+
+                if planned_samples > 0:
+                    injection_plans.append(
+                        {
+                            'arm': arm,
+                            'start_t': start_t,
+                            'remaining': planned_samples,
+                            'a_tilde': a_tilde_new,
+                            'cost_per_sample': cost_per_sample,
+                        }
+                    )
+
+        recommender.update(arm, reward)
+
+    return injection_plans, attack_samples, attack_cost
+
 def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_tilde, f, R, delta0, sigma = 1):
     recommender = UCBRecommender(n_arms, rho)
     target_pulls = 0
@@ -334,16 +389,20 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
 
     return target_pulls, target_pull_ratios, attack_cost
 
-def heuristic_probabilistic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_tilde, f, R, delta0, sigma=1,):
+def heuristic_probabilistic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_tilde, f, R, delta0, sigma=1,
+                                                  return_attack_samples=False,):
     recommender = UCBRecommender(n_arms, rho)
     target_pulls = 0
     estimated_rewards = np.zeros(n_arms)
     arm_pulls = np.zeros(n_arms)
     target_pull_ratios = []
     attack_cost = 0.0
-    attack_list = []
+    attack_samples = 0
+    sbi_plans, _, _ = get_sbi_injection_plan_real(
+        n_arms, target_arm, rho, T, reward_matrix, a_tilde=a_tilde, sigma=sigma, delta0=delta0)
+    sbi_plans = sorted(sbi_plans, key=lambda plan: plan['start_t'])
+    next_plan_idx = 0
     injection_dict = {}
-    a_tildes = {}
     total_rounds = T + n_arms
 
     for t in range(1, total_rounds + 1):
@@ -353,59 +412,47 @@ def heuristic_probabilistic_injection_attack_real(n_arms, target_arm, rho, T, re
         estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
 
         if t > n_arms:
-            # Newly attackable arms get a fixed fake-sample budget n_i, matching
-            # the total number of fake samples PBI would plan for that arm.
-            for arm_attack in attack_list[:]:
-                mu_i = estimated_rewards[arm_attack]
-                mu_k = estimated_rewards[target_arm]
-                beta_k = beta(arm_pulls[target_arm], sigma, n_arms, delta0)
-                l_hat = mu_k - 2 * beta_k - 3 * sigma * delta0
+            # Use the exact fake-sample budget SBI would have spent, but delay
+            # those samples with the probabilistic remaining-budget schedule.
+            while next_plan_idx < len(sbi_plans) and sbi_plans[next_plan_idx]['start_t'] <= t:
+                injection_plan = dict(sbi_plans[next_plan_idx])
+                key = injection_plan['arm']
+                injection_dict.setdefault(key, []).append(injection_plan)
+                next_plan_idx += 1
 
-                # Reuse the first bounded fake reward chosen for this arm so the
-                # baseline only changes injection timing, not fake reward values.
-                if arm_attack not in a_tildes:
-                    a_tilde_new = min(a_tilde, mu_k - 3 * beta_k - 3 * sigma * delta0)
-                    a_tildes[arm_attack] = a_tilde_new
-                else:
-                    a_tilde_new = a_tildes[arm_attack]
-
-                # n_tilde is the total budget n_i: how many fake samples this
-                # arm should receive before the horizon ends.
-                n_tilde = math.ceil((mu_i - l_hat) / (l_hat - a_tilde_new) * math.ceil(math.log(T) / delta0**2))
-                effective_round = max(t - n_arms, 0)
-                remaining_attack_rounds = max(T - effective_round, 0)
-
-                injection_dict[arm_attack] = {
-                    'remaining': min(max(int(n_tilde), 0), remaining_attack_rounds),
-                    'a_tilde': a_tilde_new,
-                }
-                attack_list.remove(arm_attack)
-
-            # Instead of injecting a full batch immediately like PBI, spread the
+            # Instead of injecting SBI's samples immediately, spread the
             # remaining fake samples randomly across the remaining time slots.
             for key in list(injection_dict.keys()):
-                injection_plan = injection_dict[key]
-                if injection_plan['remaining'] <= 0:
+                injection_plans = [plan for plan in injection_dict[key] if plan['remaining'] > 0]
+                if not injection_plans:
                     del injection_dict[key]
                     continue
+                injection_dict[key] = injection_plans
 
                 effective_round = max(t - n_arms, 0)
-                remaining_attack_rounds = max(T - effective_round, 1)
-                # Probability n_i / (T - t): if an injection happens, decrement
-                # n_i so no more than the planned budget is used.
-                inject_probability = min(1.0, injection_plan['remaining'] / remaining_attack_rounds)
+                remaining_attack_rounds = max(T - effective_round + 1, 1)
+                total_remaining = sum(plan['remaining'] for plan in injection_plans)
+                # Probability n_i / (T - t): when the remaining budget catches
+                # up to the remaining slots, force injections so all n_i samples
+                # are spent by the horizon rather than only in expectation.
+                inject_probability = min(1.0, total_remaining / remaining_attack_rounds)
                 if np.random.random() < inject_probability:
-                    attack_cost += abs(injection_plan['a_tilde'] - estimated_rewards[key])
-                    recommender.update(key, injection_plan['a_tilde'])
-                    injection_plan['remaining'] -= 1
+                    samples_to_inject = max(1, total_remaining - remaining_attack_rounds + 1)
+                    samples_to_inject = min(samples_to_inject, total_remaining)
+                    while samples_to_inject > 0 and injection_plans:
+                        injection_plan = injection_plans[0]
+                        used_samples = min(samples_to_inject, injection_plan['remaining'])
+                        for _ in range(used_samples):
+                            attack_cost += abs(injection_plan['a_tilde'] - estimated_rewards[key])
+                            attack_samples += 1
+                            recommender.update(key, injection_plan['a_tilde'])
+                        injection_plan['remaining'] -= used_samples
+                        samples_to_inject -= used_samples
+                        if injection_plan['remaining'] <= 0:
+                            injection_plans.pop(0)
 
-                    if injection_plan['remaining'] <= 0:
+                    if not injection_plans:
                         del injection_dict[key]
-
-            # Once a non-target arm has been pulled enough times, schedule it
-            # once for probabilistic fake-sample injection.
-            if arm != target_arm and arm_pulls[arm] >= math.ceil(math.log(T) / (delta0**2)) and arm not in attack_list and arm not in injection_dict:
-                attack_list.append(arm)
 
             if arm == target_arm:
                 target_pulls += 1
@@ -414,6 +461,9 @@ def heuristic_probabilistic_injection_attack_real(n_arms, target_arm, rho, T, re
             target_pull_ratios.append(target_pull_ratio)
 
         recommender.update(arm, reward)
+
+    if return_attack_samples:
+        return target_pulls, target_pull_ratios, attack_cost, attack_samples
 
     return target_pulls, target_pull_ratios, attack_cost
 
@@ -628,7 +678,7 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
     plt.fill_between(x, avg_ratios_pbi - std_ratios_pbi, avg_ratios_pbi + std_ratios_pbi, color='red', alpha=0.4)
     plt.plot(x, avg_ratios_li, label="Least Injection", color='green', linestyle='-', marker='s', linewidth=2, markevery=3000)
     plt.fill_between(x, avg_ratios_li - std_ratios_li, avg_ratios_li + std_ratios_li, color='green', alpha=0.4)
-    plt.plot(x, avg_ratios_heuristic, label="Heuristic Probabilistic Baseline", color='purple', linestyle='-.', marker='^', linewidth=2, markevery=3000)
+    plt.plot(x, avg_ratios_heuristic, label="Heuristic Baseline", color='purple', linestyle='-.', marker='^', linewidth=2, markevery=3000)
     plt.fill_between(x, avg_ratios_heuristic - std_ratios_heuristic, avg_ratios_heuristic + std_ratios_heuristic, color='purple', alpha=0.25)
 
     plt.tick_params(labelsize=27)
@@ -756,7 +806,7 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     plt.plot(T_values, avg_costs_li, label='Least Injection', color='green', linestyle='-', marker='s', linewidth=2)
     plt.fill_between(T_values, avg_costs_li - std_costs_li, avg_costs_li + std_costs_li, color='green', alpha=0.2)
 
-    plt.plot(T_values, avg_costs_heuristic, label='Heuristic Probabilistic Baseline', color='purple', linestyle='-.', marker='^', linewidth=2)
+    plt.plot(T_values, avg_costs_heuristic, label='Heuristic Baseline', color='purple', linestyle='-.', marker='^', linewidth=2)
     plt.fill_between(T_values, avg_costs_heuristic - std_costs_heuristic, avg_costs_heuristic + std_costs_heuristic, color='purple', alpha=0.2)
 
     warn_if_all_invalid(avg_theory_li, "LI theoretical upper bound", "plot_attack_cost_comparison")
@@ -903,7 +953,7 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
     plt.plot(delta0_values, avg_costs_li, label='Least Injection', color='green', linestyle='-', marker='s', linewidth=2)
     plt.fill_between(delta0_values, avg_costs_li - std_costs_li, avg_costs_li + std_costs_li, color='green', alpha=0.2)
 
-    plt.plot(delta0_values, avg_costs_heuristic, label='Heuristic Probabilistic Baseline', color='purple', linestyle='-.', marker='^', linewidth=2)
+    plt.plot(delta0_values, avg_costs_heuristic, label='Heuristic Baseline', color='purple', linestyle='-.', marker='^', linewidth=2)
     plt.fill_between(delta0_values, avg_costs_heuristic - std_costs_heuristic, avg_costs_heuristic + std_costs_heuristic, color='purple', alpha=0.2)
 
     warn_if_all_invalid(avg_theory_li, "LI theoretical upper bound", "plot_attack_cost_vs_delta0_comparison")
@@ -954,81 +1004,169 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
         )
     plt.show()
 
-def recompute_delta0_theory_from_cache(data, theory_a_tilde=-30.0, theory_trials=None):
-    delta0_values = data["delta0_values"]
-    n_arms = int(data["n_arms"])
-    sigma = float(data["sigma"])
-    T = int(data["T"])
-    trials = int(data["trials"]) if theory_trials is None else theory_trials
-    theory_sbi = []
-    theory_li = []
+# def recompute_delta0_theory_from_cache(data, theory_a_tilde=-30.0, theory_trials=None):
+#     delta0_values = data["delta0_values"]
+#     n_arms = int(data["n_arms"])
+#     sigma = float(data["sigma"])
+#     T = int(data["T"])
+#     trials = int(data["trials"]) if theory_trials is None else theory_trials
+#     theory_sbi = []
+#     theory_li = []
 
-    for delta0 in delta0_values:
-        trial_theory_sbi = []
-        trial_theory_li = []
-        for _ in range(trials):
-            reduced_matrix, target_arm = sample_real_problem(n_arms)
-            means = get_problem_means(reduced_matrix)
-            trial_theory_sbi.append(
-                ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, theory_a_tilde))
-            trial_theory_li.append(
-                ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0))
-        theory_sbi.append(safe_nanmean(trial_theory_sbi))
-        theory_li.append(safe_nanmean(trial_theory_li))
+#     for delta0 in delta0_values:
+#         trial_theory_sbi = []
+#         trial_theory_li = []
+#         for _ in range(trials):
+#             reduced_matrix, target_arm = sample_real_problem(n_arms)
+#             means = get_problem_means(reduced_matrix)
+#             trial_theory_sbi.append(
+#                 ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, theory_a_tilde))
+#             trial_theory_li.append(
+#                 ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0))
+#         theory_sbi.append(safe_nanmean(trial_theory_sbi))
+#         theory_li.append(safe_nanmean(trial_theory_li))
 
-    return np.array(theory_sbi), np.array(theory_li)
+#     return np.array(theory_sbi), np.array(theory_li)
 
-def plot_cached_attack_cost_vs_delta0(data_path=None, show_theory=True, show_li_theory=True, theory_a_tilde=-30.0,
-                                      theory_trials=None, save_outputs=True, plots_dir="plots"):
-    if data_path is None:
-        data_path = latest_cached_data("attack_cost_vs_delta0")
+# def recompute_T_theory_from_cache(data, theory_a_tilde=-30.0, theory_trials=None):
+#     T_values = data["T_values"]
+#     n_arms = int(data["n_arms"])
+#     sigma = float(data["sigma"])
+#     delta0 = float(data["delta0"])
+#     trials = int(data["trials"]) if theory_trials is None else theory_trials
+#     theory_sbi = []
+#     theory_li = []
 
-    data = np.load(data_path)
-    delta0_values = data["delta0_values"]
-    fig = plt.figure(figsize=(11, 7))
+#     for T in T_values:
+#         trial_theory_sbi = []
+#         trial_theory_li = []
+#         for _ in range(trials):
+#             reduced_matrix, target_arm = sample_real_problem(n_arms)
+#             means = get_problem_means(reduced_matrix)
+#             trial_theory_sbi.append(
+#                 ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, theory_a_tilde))
+#             trial_theory_li.append(
+#                 ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0))
+#         theory_sbi.append(safe_nanmean(trial_theory_sbi))
+#         theory_li.append(safe_nanmean(trial_theory_li))
 
-    empirical_series = [
-        ("Simultaneous Bounded Injection", data["avg_costs_sbi"], data["std_costs_sbi"], "blue", "o", "-"),
-        ("Periodic Bounded Injection", data["avg_costs_pbi"], data["std_costs_pbi"], "red", "x", "--"),
-        ("Least Injection", data["avg_costs_li"], data["std_costs_li"], "green", "s", "-"),
-        ("Heuristic Probabilistic Baseline", data["avg_costs_heuristic"], data["std_costs_heuristic"], "purple", "^", "-."),
-    ]
+#     return np.array(theory_sbi), np.array(theory_li)
 
-    for label, mean_values, std_values, color, marker, linestyle in empirical_series:
-        plt.plot(delta0_values, mean_values, label=label, color=color, marker=marker,
-                 linestyle=linestyle, linewidth=2, markersize=6, markevery=2)
-        plt.fill_between(delta0_values, mean_values - std_values, mean_values + std_values,
-                         color=color, alpha=0.12)
+# def plot_cached_attack_cost_comparison(data_path=None, show_theory=True, show_li_theory=True, theory_a_tilde=-30.0,
+#                                        theory_trials=None, recompute_theory=True, save_outputs=True,
+#                                        plots_dir="plots"):
+#     if data_path is None:
+#         data_path = latest_cached_data("attack_cost_vs_T")
 
-    if show_theory and theory_a_tilde is not None:
-        theory_sbi, theory_li = recompute_delta0_theory_from_cache(data, theory_a_tilde, theory_trials)
-    else:
-        theory_sbi = data["avg_theory_sbi"]
-        theory_li = data["avg_theory_li"]
+#     data = np.load(data_path)
+#     T_values = data["T_values"]
+#     fig = plt.figure(figsize=(11, 7))
+#     # Cached plots reuse SBI cost for the heuristic cost curve. Fresh/raw runs
+#     # still compute the heuristic directly via heuristic_probabilistic_injection_attack_real.
+#     avg_costs_heuristic = data["avg_costs_sbi"]
+#     std_costs_heuristic = data["std_costs_sbi"]
 
-    if show_theory and show_li_theory:
-        plt.plot(delta0_values, theory_li, label="LI Theoretical Upper Bound Cost",
-                 color="darkgreen", linestyle=":", linewidth=2, alpha=0.7)
-    if show_theory:
-        plt.plot(delta0_values, theory_sbi, label="SBI/PBI Theoretical Upper Bound Cost",
-                 color="blue", linestyle=":", linewidth=2, alpha=0.7)
+#     empirical_series = [
+#         ("Simultaneous Bounded Injection", data["avg_costs_sbi"], data["std_costs_sbi"], "blue", "o", "dotted"),
+#         ("Periodic Bounded Injection", data["avg_costs_pbi"], data["std_costs_pbi"], "red", "x", "--"),
+#         ("Least Injection", data["avg_costs_li"], data["std_costs_li"], "green", "s", "-"),
+#         ("Heuristic Baseline", avg_costs_heuristic, std_costs_heuristic, "purple", "^", "-."),
+#     ]
 
-    plt.tick_params(labelsize=18)
-    plt.xlabel("δ₀ (Confidence Parameter)", fontsize=24)
-    plt.ylabel("Average Total Attack Cost", fontsize=24)
-    plt.grid(True, alpha=0.35)
-    plt.legend(fontsize=14)
-    plt.tight_layout()
+#     for label, mean_values, std_values, color, marker, linestyle in empirical_series:
+#         plt.plot(T_values, mean_values, label=label, color=color, marker=marker,
+#                  linestyle=linestyle, linewidth=2, markersize=6)
+#         plt.fill_between(T_values, mean_values - std_values, mean_values + std_values,
+#                          color=color, alpha=0.12)
 
-    if save_outputs:
-        os.makedirs(plots_dir, exist_ok=True)
-        suffix = "with_theory" if show_theory else "empirical_only"
-        plot_path = os.path.join(plots_dir, f"{make_run_id('attack_cost_vs_delta0_cached')}_{suffix}.png")
-        fig.savefig(plot_path, dpi=300, bbox_inches="tight")
-        print(f"Saved cached-data plot to {plot_path}", flush=True)
+#     if show_theory and recompute_theory and theory_a_tilde is not None:
+#         theory_sbi, theory_li = recompute_T_theory_from_cache(data, theory_a_tilde, theory_trials)
+#     else:
+#         theory_sbi = data["avg_theory_sbi"]
+#         theory_li = data["avg_theory_li"]
 
-    plt.show()
-    return fig
+#     if show_theory and show_li_theory:
+#         plt.plot(T_values, theory_li, label="LI Theoretical Upper Bound Cost",
+#                  color="darkgreen", linestyle=":", linewidth=2, alpha=0.7)
+#     if show_theory:
+#         plt.plot(T_values, theory_sbi, label="SBI/PBI Theoretical Upper Bound Cost",
+#                  color="blue", linestyle=":", linewidth=2, alpha=0.7)
+
+#     plt.tick_params(labelsize=18)
+#     plt.xlabel("T", fontsize=24)
+#     plt.ylabel("Average Total Attack Cost", fontsize=24)
+#     plt.grid(True, alpha=0.35)
+#     # plt.legend(fontsize=14)
+#     plt.tight_layout()
+
+#     if save_outputs:
+#         os.makedirs(plots_dir, exist_ok=True)
+#         suffix = "with_theory" if show_theory else "empirical_only"
+#         run_id = make_run_id("attack_cost_vs_T_cached")
+#         plot_path = os.path.join(plots_dir, f"{run_id}_{suffix}.png")
+#         fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+#         print(f"Saved cached-data plot to {plot_path}", flush=True)
+
+#     plt.show()
+#     return fig
+
+# def plot_cached_attack_cost_vs_delta0(data_path=None, show_theory=True, show_li_theory=True, theory_a_tilde=-30.0,
+#                                       theory_trials=None, recompute_theory=True, save_outputs=True,
+#                                       plots_dir="plots"):
+#     if data_path is None:
+#         data_path = latest_cached_data("attack_cost_vs_delta0")
+
+#     data = np.load(data_path)
+#     delta0_values = data["delta0_values"]
+#     fig = plt.figure(figsize=(11, 7))
+#     # Cached plots reuse SBI cost for the heuristic cost curve. Fresh/raw runs
+#     # still compute the heuristic directly via heuristic_probabilistic_injection_attack_real.
+#     avg_costs_heuristic = data["avg_costs_sbi"]
+#     std_costs_heuristic = data["std_costs_sbi"]
+
+#     empirical_series = [
+#         ("Simultaneous Bounded Injection", data["avg_costs_sbi"], data["std_costs_sbi"], "blue", "o", "-"),
+#         ("Periodic Bounded Injection", data["avg_costs_pbi"], data["std_costs_pbi"], "red", "x", "--"),
+#         ("Least Injection", data["avg_costs_li"], data["std_costs_li"], "green", "s", "-"),
+#         ("Heuristic Baseline", avg_costs_heuristic, std_costs_heuristic, "purple", "^", "-."),
+#     ]
+
+#     for label, mean_values, std_values, color, marker, linestyle in empirical_series:
+#         plt.plot(delta0_values, mean_values, label=label, color=color, marker=marker,
+#                  linestyle=linestyle, linewidth=2, markersize=6, markevery=2)
+#         plt.fill_between(delta0_values, mean_values - std_values, mean_values + std_values,
+#                          color=color, alpha=0.12)
+
+#     if show_theory and recompute_theory and theory_a_tilde is not None:
+#         theory_sbi, theory_li = recompute_delta0_theory_from_cache(data, theory_a_tilde, theory_trials)
+#     else:
+#         theory_sbi = data["avg_theory_sbi"]
+#         theory_li = data["avg_theory_li"]
+
+#     if show_theory and show_li_theory:
+#         plt.plot(delta0_values, theory_li, label="LI Theoretical Upper Bound Cost",
+#                  color="darkgreen", linestyle=":", linewidth=2, alpha=0.7)
+#     if show_theory:
+#         plt.plot(delta0_values, theory_sbi, label="SBI/PBI Theoretical Upper Bound Cost",
+#                  color="blue", linestyle=":", linewidth=2, alpha=0.7)
+
+#     plt.tick_params(labelsize=18)
+#     plt.xlabel("δ₀ (Confidence Parameter)", fontsize=24)
+#     plt.ylabel("Average Total Attack Cost", fontsize=24)
+#     plt.grid(True, alpha=0.35)
+#     plt.legend(fontsize=14)
+#     plt.tight_layout()
+
+#     if save_outputs:
+#         os.makedirs(plots_dir, exist_ok=True)
+#         suffix = "with_theory" if show_theory else "empirical_only"
+#         run_id = make_run_id("attack_cost_vs_delta0_cached")
+#         plot_path = os.path.join(plots_dir, f"{run_id}_{suffix}.png")
+#         fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+#         print(f"Saved cached-data plot to {plot_path}", flush=True)
+
+#     plt.show()
+#     return fig
 
 
 if __name__ == "__main__":
@@ -1036,7 +1174,9 @@ if __name__ == "__main__":
     # plot_attack_cost_real()
     # plot_attack_cost_vs_delta0_real()
 
-    # experiment_comparison_injection_real()
+    experiment_comparison_injection_real()
     # plot_attack_cost_vs_delta0_comparison()
     # plot_attack_cost_comparison()
-    plot_cached_attack_cost_vs_delta0()
+
+    # plot_cached_attack_cost_vs_delta0()
+    # plot_cached_attack_cost_comparison()
