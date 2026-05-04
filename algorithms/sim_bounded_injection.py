@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import math
 import sys
 import os
+import time
 import warnings
 
 sys.path.append(os.path.abspath(".."))
@@ -37,17 +38,69 @@ def trim_ratio_runs(*ratio_runs):
     trimmed = [np.array([run[:min_len] for run in runs]) for runs in ratio_runs]
     return min_len, trimmed
 
+def format_duration(seconds):
+    seconds = max(int(seconds), 0)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m {seconds}s"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+def print_progress(label, completed, total, start_time):
+    elapsed = time.time() - start_time
+    avg_time = elapsed / max(completed, 1)
+    remaining = avg_time * max(total - completed, 0)
+    print(
+        f"{label}: {completed}/{total} complete | "
+        f"elapsed {format_duration(elapsed)} | ETA {format_duration(remaining)}",
+        flush=True,
+    )
+
+def make_run_id(prefix):
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    return f"{prefix}_{timestamp}"
+
+def save_plot_artifacts(run_id, data, figure=None, data_dir="data", plots_dir="plots"):
+    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(plots_dir, exist_ok=True)
+    data_path = os.path.join(data_dir, f"{run_id}.npz")
+    plot_path = os.path.join(plots_dir, f"{run_id}.png")
+    np.savez(data_path, **data)
+    if figure is not None:
+        figure.savefig(plot_path, dpi=300, bbox_inches="tight")
+    print(f"Saved plot data to {data_path}", flush=True)
+    if figure is not None:
+        print(f"Saved plot figure to {plot_path}", flush=True)
+    return data_path, plot_path
+
+def latest_cached_data(prefix, data_dirs=("data", "../data")):
+    candidates = []
+    for data_dir in data_dirs:
+        if not os.path.isdir(data_dir):
+            continue
+        for filename in os.listdir(data_dir):
+            if filename.startswith(prefix) and filename.endswith(".npz"):
+                path = os.path.join(data_dir, filename)
+                candidates.append(path)
+    if not candidates:
+        raise FileNotFoundError(f"No cached {prefix} data found in {data_dirs}")
+    return max(candidates, key=os.path.getmtime)
+
 def ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0):
     beta_one = beta(1, sigma, n_arms, delta0)
     target_mean = means[target_arm]
-    log_term = math.log(max(T, 2)) / (delta0**2)
+    attack_threshold = math.ceil(math.log(max(T, 2)) / (delta0**2))
+    target_lower_bound = target_mean - 3 * beta_one - 3 * sigma * delta0
     total_cost = 0.0
 
     for arm, mean in enumerate(means):
         if arm == target_arm:
             continue
-        delta_i = mean - target_mean
-        total_cost += (delta_i + 4 * beta_one + 3 * sigma * delta0) * log_term
+        # Paper LI choice: n_i = 1 and r_i^F = (N_i + 1) * l_K - mu_i * N_i.
+        fake_reward = (attack_threshold + 1) * target_lower_bound - mean * attack_threshold
+        total_cost += abs(fake_reward - mean)
 
     return total_cost
 
@@ -70,8 +123,8 @@ def ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, de
     return total_cost
 
 def ucb_pbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde):
-    # Should have around same theoretical injection cost because we inject the same number of samples as SBI, 
-    # just in a different pattern. The cost per sample is also similar since we are injecting the same a_tilde value.
+    # For the UCB plots we use the same cumulative-cost upper bound as SBI:
+    # PBI changes when the fake samples are injected, not the planned total n_i.
     return ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
 
 def warn_if_all_invalid(curve_values, label, plot_name):
@@ -194,7 +247,7 @@ def periodic_injection_attack_real(n_arms, target_arm, rho, T, reward_matrix, a_
     attack_list = []
     injection_dict = {} 
     sleep_counter = {} 
-    a_tildes = {}     
+    a_tildes = {}
     
     for t in range(1, T + 1 + n_arms):
         arm = recommender.play()
@@ -300,18 +353,24 @@ def heuristic_probabilistic_injection_attack_real(n_arms, target_arm, rho, T, re
         estimated_rewards[arm] = (estimated_rewards[arm] * (arm_pulls[arm] - 1) + reward) / arm_pulls[arm]
 
         if t > n_arms:
+            # Newly attackable arms get a fixed fake-sample budget n_i, matching
+            # the total number of fake samples PBI would plan for that arm.
             for arm_attack in attack_list[:]:
                 mu_i = estimated_rewards[arm_attack]
                 mu_k = estimated_rewards[target_arm]
                 beta_k = beta(arm_pulls[target_arm], sigma, n_arms, delta0)
                 l_hat = mu_k - 2 * beta_k - 3 * sigma * delta0
 
+                # Reuse the first bounded fake reward chosen for this arm so the
+                # baseline only changes injection timing, not fake reward values.
                 if arm_attack not in a_tildes:
                     a_tilde_new = min(a_tilde, mu_k - 3 * beta_k - 3 * sigma * delta0)
                     a_tildes[arm_attack] = a_tilde_new
                 else:
                     a_tilde_new = a_tildes[arm_attack]
 
+                # n_tilde is the total budget n_i: how many fake samples this
+                # arm should receive before the horizon ends.
                 n_tilde = math.ceil((mu_i - l_hat) / (l_hat - a_tilde_new) * math.ceil(math.log(T) / delta0**2))
                 effective_round = max(t - n_arms, 0)
                 remaining_attack_rounds = max(T - effective_round, 0)
@@ -322,6 +381,8 @@ def heuristic_probabilistic_injection_attack_real(n_arms, target_arm, rho, T, re
                 }
                 attack_list.remove(arm_attack)
 
+            # Instead of injecting a full batch immediately like PBI, spread the
+            # remaining fake samples randomly across the remaining time slots.
             for key in list(injection_dict.keys()):
                 injection_plan = injection_dict[key]
                 if injection_plan['remaining'] <= 0:
@@ -330,6 +391,8 @@ def heuristic_probabilistic_injection_attack_real(n_arms, target_arm, rho, T, re
 
                 effective_round = max(t - n_arms, 0)
                 remaining_attack_rounds = max(T - effective_round, 1)
+                # Probability n_i / (T - t): if an injection happens, decrement
+                # n_i so no more than the planned budget is used.
                 inject_probability = min(1.0, injection_plan['remaining'] / remaining_attack_rounds)
                 if np.random.random() < inject_probability:
                     attack_cost += abs(injection_plan['a_tilde'] - estimated_rewards[key])
@@ -339,6 +402,8 @@ def heuristic_probabilistic_injection_attack_real(n_arms, target_arm, rho, T, re
                     if injection_plan['remaining'] <= 0:
                         del injection_dict[key]
 
+            # Once a non-target arm has been pulled enough times, schedule it
+            # once for probabilistic fake-sample injection.
             if arm != target_arm and arm_pulls[arm] >= math.ceil(math.log(T) / (delta0**2)) and arm not in attack_list and arm not in injection_dict:
                 attack_list.append(arm)
 
@@ -513,41 +578,36 @@ def plot_attack_cost_vs_delta0_real(n_arms=10, rho=1.0, T=int(1e4), a_tilde=0.0,
     plt.show()
 
 
-def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1.0, delta0=0.2, trials=20):
+def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1.0, delta0=0.2, trials=20, show_progress=True, save_outputs=True,):
     all_ratios_sbi = []
     all_ratios_pbi = []
     all_ratios_li = []
     all_ratios_heuristic = []
 
-    for _ in range(trials):
+    progress_start = time.time()
+
+    for trial_idx in range(1, trials + 1):
         reduced_matrix, target_arm = sample_real_problem(n_arms)
 
         target_pulls_sbi, _, target_pull_ratios_sbi, _ = simultaneous_bounded_injection_attack_real(
-            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, sigma=sigma, delta0=delta0
-        )
+            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, sigma=sigma, delta0=delta0)
         all_ratios_sbi.append(target_pull_ratios_sbi)
 
         target_pulls_pbi, target_pull_ratios_pbi, _ = periodic_injection_attack_real(
-            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, f=5, R=5000, sigma=sigma, delta0=delta0
-        )
+            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, f=5, R=5000, sigma=sigma, delta0=delta0)
         all_ratios_pbi.append(target_pull_ratios_pbi)
 
         target_pulls_li, target_pull_ratios_li, _ = least_injection_attack_real(
-            n_arms, target_arm, rho, T, reduced_matrix, sigma=sigma, delta0=delta0
-        )
+            n_arms, target_arm, rho, T, reduced_matrix, sigma=sigma, delta0=delta0)
         all_ratios_li.append(target_pull_ratios_li)
 
         _, target_pull_ratios_heuristic, _ = heuristic_probabilistic_injection_attack_real(
-            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, f=5, R=5000, sigma=sigma, delta0=delta0
-        )
+            n_arms, target_arm, rho, T, reduced_matrix, a_tilde=0.0, f=5, R=5000, sigma=sigma, delta0=delta0)
         all_ratios_heuristic.append(target_pull_ratios_heuristic)
+        if show_progress:
+            print_progress("experiment_comparison_injection_real", trial_idx, trials, progress_start)
 
-    min_len, trimmed_runs = trim_ratio_runs(
-        all_ratios_sbi,
-        all_ratios_pbi,
-        all_ratios_li,
-        all_ratios_heuristic,
-    )
+    min_len, trimmed_runs = trim_ratio_runs(all_ratios_sbi, all_ratios_pbi, all_ratios_li, all_ratios_heuristic,)
     all_ratios_sbi, all_ratios_pbi, all_ratios_li, all_ratios_heuristic = trimmed_runs
 
     avg_ratios_sbi = np.mean(all_ratios_sbi, axis=0)
@@ -561,10 +621,10 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
 
     x = np.arange(1, min_len + 1)
     
-    plt.figure(figsize=(12, 8))
+    fig = plt.figure(figsize=(12, 8))
     plt.plot(x, avg_ratios_sbi, label="Simultaneous Bounded Injection", color='blue', linestyle='-', marker='o', linewidth=2, markevery=3000)
     plt.fill_between(x, avg_ratios_sbi - std_ratios_sbi, avg_ratios_sbi + std_ratios_sbi, color='blue', alpha=0.4)
-    plt.plot(x, avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='-', marker='x', linewidth=1, markevery=3000)
+    plt.plot(x, avg_ratios_pbi, label="Periodic Bounded Injection", color='red', linestyle='-', marker='x', linewidth=2, markevery=3000)
     plt.fill_between(x, avg_ratios_pbi - std_ratios_pbi, avg_ratios_pbi + std_ratios_pbi, color='red', alpha=0.4)
     plt.plot(x, avg_ratios_li, label="Least Injection", color='green', linestyle='-', marker='s', linewidth=2, markevery=3000)
     plt.fill_between(x, avg_ratios_li - std_ratios_li, avg_ratios_li + std_ratios_li, color='green', alpha=0.4)
@@ -577,9 +637,31 @@ def experiment_comparison_injection_real(T=int(1e5), n_arms=10, rho=1.0, sigma=1
     plt.grid(True)
     plt.legend(fontsize=18)
     plt.tight_layout()
+    if save_outputs:
+        run_id = make_run_id("target_ratio_comparison")
+        save_plot_artifacts(run_id,
+            {
+                "x": x,
+                "avg_ratios_sbi": avg_ratios_sbi,
+                "std_ratios_sbi": std_ratios_sbi,
+                "avg_ratios_pbi": avg_ratios_pbi,
+                "std_ratios_pbi": std_ratios_pbi,
+                "avg_ratios_li": avg_ratios_li,
+                "std_ratios_li": std_ratios_li,
+                "avg_ratios_heuristic": avg_ratios_heuristic,
+                "std_ratios_heuristic": std_ratios_heuristic,
+                "T": np.array(T),
+                "n_arms": np.array(n_arms),
+                "rho": np.array(rho),
+                "sigma": np.array(sigma),
+                "delta0": np.array(delta0),
+                "trials": np.array(trials),
+            }, fig,)
     plt.show()
 
-def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delta0=0.2, R=5000, f=5, trials=20):
+def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delta0=0.2, R=5000, f=5, trials=20,
+                                T_values=None, theory_a_tilde=-30.0, show_theory=True, show_li_theory=False,
+                                show_progress=True, save_outputs=True,):
     avg_costs_sbi = []
     avg_costs_pbi = []
     avg_costs_li = []
@@ -591,11 +673,18 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     std_costs_pbi = []
     std_costs_li = []
     std_costs_heuristic = []
-    base_T_values = np.logspace(1, 7, num=10, dtype=int)
-    custom_T_values = np.array([int(0.4e7), int(0.6e7), int(0.8e7)])
-    T_values = np.unique(np.concatenate((base_T_values, custom_T_values)))
 
-    for T in T_values:
+    if T_values is None:
+        base_T_values = np.logspace(1, 7, num=10, dtype=int)
+        custom_T_values = np.array([int(0.4e7), int(0.6e7), int(0.8e7)])
+        T_values = np.unique(np.concatenate((base_T_values, custom_T_values)))
+    else:
+        T_values = np.array(T_values, dtype=int)
+
+    progress_start = time.time()
+    theory_reward = a_tilde if theory_a_tilde is None else theory_a_tilde
+
+    for idx, T in enumerate(T_values, start=1):
         trial_costs_sbi = []
         trial_costs_pbi = []
         trial_costs_li = []
@@ -620,19 +709,15 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
             trial_costs_li.append(attack_cost_li)
 
             _, _, attack_cost_heuristic = heuristic_probabilistic_injection_attack_real(
-                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0
-            )
+                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0)
             trial_costs_heuristic.append(attack_cost_heuristic)
 
             trial_theory_li.append(
-                ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0)
-            )
+                ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0))
             trial_theory_sbi.append(
-                ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
-            )
+                ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, theory_reward))
             trial_theory_pbi.append(
-                ucb_pbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
-            )
+                ucb_pbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, theory_reward))
 
         avg_costs_sbi.append(np.mean(trial_costs_sbi))
         avg_costs_pbi.append(np.mean(trial_costs_pbi))
@@ -645,6 +730,8 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
         std_costs_pbi.append(np.std(trial_costs_pbi))
         std_costs_li.append(np.std(trial_costs_li))
         std_costs_heuristic.append(np.std(trial_costs_heuristic))
+        if show_progress:
+            print_progress("plot_attack_cost_comparison", idx, len(T_values), progress_start)
 
     avg_costs_sbi = np.array(avg_costs_sbi)
     avg_costs_pbi = np.array(avg_costs_pbi)
@@ -658,7 +745,7 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     std_costs_li = np.array(std_costs_li)
     std_costs_heuristic = np.array(std_costs_heuristic)
 
-    plt.figure(figsize=(12, 8))
+    fig = plt.figure(figsize=(12, 8))
 
     plt.plot(T_values, avg_costs_sbi, label='Simultaneous Bounded Injection', color='blue', linestyle='dotted', marker='o', linewidth=2)
     plt.fill_between(T_values, avg_costs_sbi - std_costs_sbi, avg_costs_sbi + std_costs_sbi, color='blue', alpha=0.2)
@@ -679,9 +766,10 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     li_mask = np.isfinite(avg_theory_li)
     sbi_mask = np.isfinite(avg_theory_sbi)
     pbi_mask = np.isfinite(avg_theory_pbi)
-    plt.plot(T_values[li_mask], avg_theory_li[li_mask], label='LI Theoretical Upper Bound', color='darkgreen', linestyle=':', linewidth=2)
-    plt.plot(T_values[sbi_mask], avg_theory_sbi[sbi_mask], label='SBI Theoretical Upper Bound', color='navy', linestyle=':', linewidth=2)
-    plt.plot(T_values[pbi_mask], avg_theory_pbi[pbi_mask], label='PBI UCB Upper Bound (same total n_i as SBI)', color='darkred', linestyle=':', linewidth=2)
+    if show_theory and show_li_theory:
+        plt.plot(T_values[li_mask], avg_theory_li[li_mask], label='LI Theoretical Upper Bound Cost', color='darkgreen', linestyle=':', linewidth=2)
+    if show_theory:
+        plt.plot(T_values[sbi_mask], avg_theory_sbi[sbi_mask], label='SBI/PBI Theoretical Upper Bound Cost', color='blue', linestyle=':', linewidth=2)
 
     plt.tick_params(labelsize=27)
     plt.xlabel("T", fontsize=30)
@@ -689,10 +777,41 @@ def plot_attack_cost_comparison(n_arms=10, rho=1.0, a_tilde=0.0, sigma=1.0, delt
     plt.grid(True)
     plt.legend(fontsize=16)
     plt.tight_layout()
+    if save_outputs:
+        run_id = make_run_id("attack_cost_vs_T")
+        save_plot_artifacts(
+            run_id,
+            {
+                "T_values": T_values,
+                "avg_costs_sbi": avg_costs_sbi,
+                "std_costs_sbi": std_costs_sbi,
+                "avg_costs_pbi": avg_costs_pbi,
+                "std_costs_pbi": std_costs_pbi,
+                "avg_costs_li": avg_costs_li,
+                "std_costs_li": std_costs_li,
+                "avg_costs_heuristic": avg_costs_heuristic,
+                "std_costs_heuristic": std_costs_heuristic,
+                "avg_theory_sbi": avg_theory_sbi,
+                "avg_theory_pbi": avg_theory_pbi,
+                "avg_theory_li": avg_theory_li,
+                "n_arms": np.array(n_arms),
+                "rho": np.array(rho),
+                "a_tilde": np.array(a_tilde),
+                "theory_a_tilde": np.array(theory_reward),
+                "sigma": np.array(sigma),
+                "delta0": np.array(delta0),
+                "R": np.array(R),
+                "f": np.array(f),
+                "trials": np.array(trials),
+            },
+            fig,
+        )
     plt.show()
 
 
-def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tilde=0.0, sigma=1.0, R=5000, f=5, trials=20):
+def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tilde=0.0, sigma=1.0, R=5000, f=5, trials=20,
+                                        delta0_values=None, theory_a_tilde=-30.0, show_theory=True, show_li_theory=False,
+                                        show_progress=True, save_outputs=True,):
     avg_costs_sbi = []
     avg_costs_pbi = []
     avg_costs_li = []
@@ -704,9 +823,15 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
     std_costs_pbi = []
     std_costs_li = []
     std_costs_heuristic = []
-    delta0_values = np.linspace(0.1, 0.5, num=20)
+    if delta0_values is None:
+        delta0_values = np.linspace(0.1, 0.5, num=20)
+    else:
+        delta0_values = np.array(delta0_values, dtype=float)
 
-    for delta0 in delta0_values:
+    progress_start = time.time()
+    theory_reward = a_tilde if theory_a_tilde is None else theory_a_tilde
+
+    for idx, delta0 in enumerate(delta0_values, start=1):
         trial_costs_sbi = []
         trial_costs_pbi = []
         trial_costs_li = []
@@ -731,19 +856,15 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
             trial_costs_li.append(attack_cost_li)
 
             _, _, attack_cost_heuristic = heuristic_probabilistic_injection_attack_real(
-                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0
-            )
+                n_arms, target_arm, rho, T, reduced_matrix, a_tilde=a_tilde, f=f, R=R, sigma=sigma, delta0=delta0)
             trial_costs_heuristic.append(attack_cost_heuristic)
 
             trial_theory_li.append(
-                ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0)
-            )
+                ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0))
             trial_theory_sbi.append(
-                ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
-            )
+                ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, theory_reward))
             trial_theory_pbi.append(
-                ucb_pbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, a_tilde)
-            )
+                ucb_pbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, theory_reward))
 
         avg_costs_sbi.append(np.mean(trial_costs_sbi))
         avg_costs_pbi.append(np.mean(trial_costs_pbi))
@@ -756,6 +877,8 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
         std_costs_pbi.append(np.std(trial_costs_pbi))
         std_costs_li.append(np.std(trial_costs_li))
         std_costs_heuristic.append(np.std(trial_costs_heuristic))
+        if show_progress:
+            print_progress("plot_attack_cost_vs_delta0_comparison", idx, len(delta0_values), progress_start)
 
     avg_costs_sbi = np.array(avg_costs_sbi)
     avg_costs_pbi = np.array(avg_costs_pbi)
@@ -769,7 +892,7 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
     std_costs_li = np.array(std_costs_li)
     std_costs_heuristic = np.array(std_costs_heuristic)
 
-    plt.figure(figsize=(12, 8))
+    fig = plt.figure(figsize=(12, 8))
 
     plt.plot(delta0_values, avg_costs_sbi, label='Simultaneous Bounded Injection', color='blue', linestyle='dotted', marker='o', linewidth=2)
     plt.fill_between(delta0_values, avg_costs_sbi - std_costs_sbi, avg_costs_sbi + std_costs_sbi, color='blue', alpha=0.2)
@@ -790,17 +913,122 @@ def plot_attack_cost_vs_delta0_comparison(n_arms=10, rho=1.0, T=int(1e6), a_tild
     li_mask = np.isfinite(avg_theory_li)
     sbi_mask = np.isfinite(avg_theory_sbi)
     pbi_mask = np.isfinite(avg_theory_pbi)
-    plt.plot(delta0_values[li_mask], avg_theory_li[li_mask], label='LI Theoretical Upper Bound', color='darkgreen', linestyle=':', linewidth=2)
-    plt.plot(delta0_values[sbi_mask], avg_theory_sbi[sbi_mask], label='SBI Theoretical Upper Bound', color='navy', linestyle=':', linewidth=2)
-    plt.plot(delta0_values[pbi_mask], avg_theory_pbi[pbi_mask], label='PBI UCB Upper Bound (same total n_i as SBI)', color='darkred', linestyle=':', linewidth=2)
-
+    if show_theory and show_li_theory:
+        plt.plot(delta0_values[li_mask], avg_theory_li[li_mask], label='LI Theoretical Upper Bound Cost', color='darkgreen', linestyle=':', linewidth=2)
+    if show_theory:
+        plt.plot(delta0_values[sbi_mask], avg_theory_sbi[sbi_mask], label='SBI/PBI Theoretical Upper Bound Cost', color='blue', linestyle=':', linewidth=2)
     plt.tick_params(labelsize=27)
     plt.xlabel("δ₀ (Confidence Parameter)", fontsize=30)
     plt.ylabel("Average Total Attack Cost", fontsize=30)
     plt.grid(True)
     plt.legend(fontsize=16)
     plt.tight_layout()
+    if save_outputs:
+        run_id = make_run_id("attack_cost_vs_delta0")
+        save_plot_artifacts(
+            run_id,
+            {
+                "delta0_values": delta0_values,
+                "avg_costs_sbi": avg_costs_sbi,
+                "std_costs_sbi": std_costs_sbi,
+                "avg_costs_pbi": avg_costs_pbi,
+                "std_costs_pbi": std_costs_pbi,
+                "avg_costs_li": avg_costs_li,
+                "std_costs_li": std_costs_li,
+                "avg_costs_heuristic": avg_costs_heuristic,
+                "std_costs_heuristic": std_costs_heuristic,
+                "avg_theory_sbi": avg_theory_sbi,
+                "avg_theory_pbi": avg_theory_pbi,
+                "avg_theory_li": avg_theory_li,
+                "n_arms": np.array(n_arms),
+                "rho": np.array(rho),
+                "T": np.array(T),
+                "a_tilde": np.array(a_tilde),
+                "theory_a_tilde": np.array(theory_reward),
+                "sigma": np.array(sigma),
+                "R": np.array(R),
+                "f": np.array(f),
+                "trials": np.array(trials),
+            },
+            fig,
+        )
     plt.show()
+
+def recompute_delta0_theory_from_cache(data, theory_a_tilde=-30.0, theory_trials=None):
+    delta0_values = data["delta0_values"]
+    n_arms = int(data["n_arms"])
+    sigma = float(data["sigma"])
+    T = int(data["T"])
+    trials = int(data["trials"]) if theory_trials is None else theory_trials
+    theory_sbi = []
+    theory_li = []
+
+    for delta0 in delta0_values:
+        trial_theory_sbi = []
+        trial_theory_li = []
+        for _ in range(trials):
+            reduced_matrix, target_arm = sample_real_problem(n_arms)
+            means = get_problem_means(reduced_matrix)
+            trial_theory_sbi.append(
+                ucb_sbi_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0, theory_a_tilde))
+            trial_theory_li.append(
+                ucb_li_theoretical_cost_upper_bound(T, means, target_arm, n_arms, sigma, delta0))
+        theory_sbi.append(safe_nanmean(trial_theory_sbi))
+        theory_li.append(safe_nanmean(trial_theory_li))
+
+    return np.array(theory_sbi), np.array(theory_li)
+
+def plot_cached_attack_cost_vs_delta0(data_path=None, show_theory=True, show_li_theory=True, theory_a_tilde=-30.0,
+                                      theory_trials=None, save_outputs=True, plots_dir="plots"):
+    if data_path is None:
+        data_path = latest_cached_data("attack_cost_vs_delta0")
+
+    data = np.load(data_path)
+    delta0_values = data["delta0_values"]
+    fig = plt.figure(figsize=(11, 7))
+
+    empirical_series = [
+        ("Simultaneous Bounded Injection", data["avg_costs_sbi"], data["std_costs_sbi"], "blue", "o", "-"),
+        ("Periodic Bounded Injection", data["avg_costs_pbi"], data["std_costs_pbi"], "red", "x", "--"),
+        ("Least Injection", data["avg_costs_li"], data["std_costs_li"], "green", "s", "-"),
+        ("Heuristic Probabilistic Baseline", data["avg_costs_heuristic"], data["std_costs_heuristic"], "purple", "^", "-."),
+    ]
+
+    for label, mean_values, std_values, color, marker, linestyle in empirical_series:
+        plt.plot(delta0_values, mean_values, label=label, color=color, marker=marker,
+                 linestyle=linestyle, linewidth=2, markersize=6, markevery=2)
+        plt.fill_between(delta0_values, mean_values - std_values, mean_values + std_values,
+                         color=color, alpha=0.12)
+
+    if show_theory and theory_a_tilde is not None:
+        theory_sbi, theory_li = recompute_delta0_theory_from_cache(data, theory_a_tilde, theory_trials)
+    else:
+        theory_sbi = data["avg_theory_sbi"]
+        theory_li = data["avg_theory_li"]
+
+    if show_theory and show_li_theory:
+        plt.plot(delta0_values, theory_li, label="LI Theoretical Upper Bound Cost",
+                 color="darkgreen", linestyle=":", linewidth=2, alpha=0.7)
+    if show_theory:
+        plt.plot(delta0_values, theory_sbi, label="SBI/PBI Theoretical Upper Bound Cost",
+                 color="blue", linestyle=":", linewidth=2, alpha=0.7)
+
+    plt.tick_params(labelsize=18)
+    plt.xlabel("δ₀ (Confidence Parameter)", fontsize=24)
+    plt.ylabel("Average Total Attack Cost", fontsize=24)
+    plt.grid(True, alpha=0.35)
+    plt.legend(fontsize=14)
+    plt.tight_layout()
+
+    if save_outputs:
+        os.makedirs(plots_dir, exist_ok=True)
+        suffix = "with_theory" if show_theory else "empirical_only"
+        plot_path = os.path.join(plots_dir, f"{make_run_id('attack_cost_vs_delta0_cached')}_{suffix}.png")
+        fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+        print(f"Saved cached-data plot to {plot_path}", flush=True)
+
+    plt.show()
+    return fig
 
 
 if __name__ == "__main__":
@@ -810,4 +1038,5 @@ if __name__ == "__main__":
 
     # experiment_comparison_injection_real()
     # plot_attack_cost_vs_delta0_comparison()
-    plot_attack_cost_comparison()
+    # plot_attack_cost_comparison()
+    plot_cached_attack_cost_vs_delta0()
