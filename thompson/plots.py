@@ -249,6 +249,6 @@ def beta(N, sigma, n_arms, delta):
 
 
 if __name__ == "__main__":
-    plot_attack_cost_vs_delta0()
+    # plot_attack_cost_vs_delta0()
     #plot_attack_cost_vs_T()
-    # plot_target_arm_ratio()
+    plot_target_arm_ratio()
