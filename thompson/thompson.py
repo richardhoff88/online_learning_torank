@@ -642,7 +642,152 @@ def plot_target_ratio_comparison(K=10, T=int(1e5), delta0=1.0, trials=10, show_p
         )
     plt.show()
 
+def latest_cached_data(prefix, data_dirs=("data",)):
+    candidates = []
+    for data_dir in data_dirs:
+        if not os.path.isabs(data_dir):
+            data_dir = os.path.join(ARTIFACT_ROOT, data_dir)
+        if not os.path.isdir(data_dir):
+            continue
+        for filename in os.listdir(data_dir):
+            if filename.startswith(prefix) and filename.endswith(".npz"):
+                candidates.append(os.path.join(data_dir, filename))
+    if not candidates:
+        raise FileNotFoundError(f"No cached {prefix} data found in {data_dirs}")
+    return max(candidates, key=os.path.getmtime)
+
+
+def save_cached_plot(fig, prefix, show_theory=True, plots_dir="plots"):
+    if not os.path.isabs(plots_dir):
+        plots_dir = os.path.join(ARTIFACT_ROOT, plots_dir)
+    os.makedirs(plots_dir, exist_ok=True)
+    suffix = "with_theory" if show_theory else "empirical_only"
+    plot_path = os.path.join(plots_dir, f"{make_run_id(prefix)}_{suffix}.png")
+    fig.savefig(plot_path, dpi=300, bbox_inches="tight")
+    print(f"Saved cached-data plot to {plot_path}", flush=True)
+    return plot_path
+
+# def plot_cached_attack_cost_comparison(data_path=None, show_theory=True, show_single_theory=True,
+#                                        save_outputs=True, plots_dir="plots"):
+#     if data_path is None:
+#         data_path = latest_cached_data("ts_attack_cost_vs_T")
+
+#     data = np.load(data_path)
+#     T_values = data["T_values"]
+#     fig = plt.figure(figsize=(12, 8))
+#     avg_costs_heuristic = data["avg_costs_sequential"]
+#     std_costs_heuristic = data["std_costs_sequential"]
+
+#     empirical_series = [
+#         ("Least Injection", data["avg_costs_single"], data["std_costs_single"], "blue", "o", "dotted"),
+#         ("Simultaneous Bounded Injection", data["avg_costs_sequential"], data["std_costs_sequential"], "green", "x", "--"),
+#         ("Periodic Bounded Injection", data["avg_costs_periodic"], data["std_costs_periodic"], "red", "s", "-"),
+#         ("Heuristic Baseline", avg_costs_heuristic, std_costs_heuristic, "purple", "^", "-."),
+#     ]
+#     for label, mean_values, std_values, color, marker, linestyle in empirical_series:
+#         plt.plot(T_values, mean_values, label=label, color=color, marker=marker,
+#                  linestyle=linestyle, linewidth=2)
+#         plt.fill_between(T_values, mean_values - std_values, mean_values + std_values,
+#                          color=color, alpha=0.2)
+
+#     if show_theory and show_single_theory and "avg_theory_single" in data:
+#         single_mask = np.isfinite(data["avg_theory_single"])
+#         plt.plot(T_values[single_mask], data["avg_theory_single"][single_mask],
+#                  label="LI Theoretical Upper Bound Cost", color="darkblue", linestyle=":", linewidth=2)
+#     if show_theory and "avg_theory_sequential" in data:
+#         sequential_mask = np.isfinite(data["avg_theory_sequential"])
+#         plt.plot(T_values[sequential_mask], data["avg_theory_sequential"][sequential_mask],
+#                  label="SBI/PBI Theoretical Upper Bound Cost", color="darkgreen", linestyle=":", linewidth=2)
+
+#     plt.tick_params(labelsize=27)
+#     plt.xlabel("T", fontsize=30)
+#     plt.ylabel("Average Total Attack Cost", fontsize=30)
+#     plt.grid(True)
+#     plt.legend(fontsize=16)
+#     plt.tight_layout()
+#     if save_outputs:
+#         save_cached_plot(fig, "ts_attack_cost_vs_T_cached", show_theory=show_theory, plots_dir=plots_dir)
+#     plt.show()
+#     return fig
+
+
+# def plot_cached_attack_cost_vs_delta0(data_path=None, show_theory=True, show_single_theory=True,
+#                                       save_outputs=True, plots_dir="plots"):
+#     if data_path is None:
+#         data_path = latest_cached_data("ts_attack_cost_vs_delta0")
+
+#     data = np.load(data_path)
+#     delta0_values = data["delta0_values"]
+#     fig = plt.figure(figsize=(12, 8))
+
+#     empirical_series = [
+#         ("Least Injection", data["avg_costs_single"], data["std_costs_single"], "blue", "o", "dotted"),
+#         ("Simultaneous Bounded Injection", data["avg_costs_sequential"], data["std_costs_sequential"], "green", "x", "--"),
+#         ("Periodic Bounded Injection", data["avg_costs_periodic"], data["std_costs_periodic"], "red", "s", "-"),
+#         ("Heuristic Baseline", data["avg_costs_heuristic"], data["std_costs_heuristic"], "purple", "^", "-."),
+#     ]
+#     for label, mean_values, std_values, color, marker, linestyle in empirical_series:
+#         plt.plot(delta0_values, mean_values, label=label, color=color, marker=marker,
+#                  linestyle=linestyle, linewidth=2)
+#         plt.fill_between(delta0_values, mean_values - std_values, mean_values + std_values,
+#                          color=color, alpha=0.2)
+
+#     if show_theory and show_single_theory and "avg_theory_single" in data:
+#         single_mask = np.isfinite(data["avg_theory_single"])
+#         plt.plot(delta0_values[single_mask], data["avg_theory_single"][single_mask],
+#                  label="LI Theoretical Upper Bound Cost", color="darkblue", linestyle=":", linewidth=2)
+#     if show_theory and "avg_theory_sequential" in data:
+#         sequential_mask = np.isfinite(data["avg_theory_sequential"])
+#         plt.plot(delta0_values[sequential_mask], data["avg_theory_sequential"][sequential_mask],
+#                  label="SBI/PBI Theoretical Upper Bound Cost", color="darkgreen", linestyle=":", linewidth=2)
+
+#     plt.tick_params(labelsize=27)
+#     plt.xlabel("δ₀ (Confidence Parameter)", fontsize=30)
+#     plt.ylabel("Average Total Attack Cost", fontsize=30)
+#     plt.grid(True)
+#     plt.legend(fontsize=16)
+#     plt.tight_layout()
+#     if save_outputs:
+#         save_cached_plot(fig, "ts_attack_cost_vs_delta0_cached", show_theory=show_theory, plots_dir=plots_dir)
+#     plt.show()
+#     return fig
+
+
+# def plot_cached_target_ratio_comparison(data_path=None, save_outputs=True, plots_dir="plots"):
+#     if data_path is None:
+#         data_path = latest_cached_data("ts_target_ratio_comparison")
+
+#     data = np.load(data_path)
+#     x = data["x"]
+#     fig = plt.figure(figsize=(12, 8))
+
+#     ratio_series = [
+#         ("Least Injection", data["avg_ratios_single"], data["std_ratios_single"], "blue", "o", "dotted"),
+#         ("Simultaneous Bounded Injection", data["avg_ratios_sequential"], data["std_ratios_sequential"], "green", "x", "--"),
+#         ("Periodic Bounded Injection", data["avg_ratios_periodic"], data["std_ratios_periodic"], "red", "s", "-"),
+#         ("Heuristic Baseline", data["avg_ratios_heuristic"], data["std_ratios_heuristic"], "purple", "^", "-."),
+#     ]
+#     for label, mean_values, std_values, color, marker, linestyle in ratio_series:
+#         markevery = max(len(x) // 30, 1)
+#         plt.plot(x, mean_values, label=label, color=color, linestyle=linestyle,
+#                  marker=marker, linewidth=2, markevery=markevery)
+#         plt.fill_between(x, mean_values - std_values, mean_values + std_values,
+#                          color=color, alpha=0.25)
+
+#     plt.tick_params(labelsize=27)
+#     plt.xlabel("Rounds", fontsize=30)
+#     plt.ylabel("Target Arm Selection Ratio", fontsize=30)
+#     plt.grid(True)
+#     plt.legend(fontsize=28)
+#     plt.tight_layout()
+#     if save_outputs:
+#         save_cached_plot(fig, "ts_target_ratio_comparison_cached", show_theory=False, plots_dir=plots_dir)
+#     plt.show()
+#     return fig
+
 if __name__ == "__main__":
     plot_target_ratio_comparison()
     # plot_attack_cost_comparison()
     # plot_attack_cost_vs_delta0_comparison()
+
+    # plot_cached_attack_cost_comparison()
